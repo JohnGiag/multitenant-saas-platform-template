@@ -16,6 +16,9 @@ process.env.TRUST_PROXY_HOPS = '1';
 export const randomIp = () => `10.${[0, 0, 0].map(() => Math.floor(Math.random() * 256)).join('.')}`;
 const CLIENT_IP = randomIp();
 
+// The suite tests local mode whatever .env says; clerk.e2e and auth-provider.e2e switch it themselves.
+process.env.AUTH_PROVIDER = 'local';
+
 // The offline suite never sends real email: tests stub Resend, and this fake key makes any request a
 // stub misses fail instead of sending. Only test/live/ uses the real RESEND_PLATFORM_KEY.
 process.env.RESEND_PLATFORM_KEY = 're_offline_test_suite';

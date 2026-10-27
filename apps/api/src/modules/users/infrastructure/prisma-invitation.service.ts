@@ -8,6 +8,7 @@ import type {
   InvitationPageQuery,
 } from '@repo/shared-types';
 import { toCursorPage } from '../../../common/cursor-page.js';
+import { hasCode } from '../../../common/prisma-errors.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { hashPassword } from '../../auth/infrastructure/password.js';
@@ -28,8 +29,6 @@ const toInvitation = (row: PublicRow): Invitation => ({
   expiresAt: row.expiresAt.toISOString(),
   createdAt: row.createdAt.toISOString(),
 });
-
-const hasCode = (error: unknown, code: string) => (error as { code?: unknown } | null)?.code === code;
 
 @Injectable()
 export class PrismaInvitationService implements InvitationService {

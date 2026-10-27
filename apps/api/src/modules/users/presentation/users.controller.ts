@@ -34,6 +34,7 @@ import { passwordChangeKey } from '../../rate-limit/domain/rate-limit-policy.js'
 import { clearAccountAttempts, countAccountAttempt } from '../../rate-limit/presentation/account-attempts.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { USER_REPOSITORY, type UserRepository } from '../domain/ports/user.repository.js';
+import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 
 // Members of the current tenant (a SuperAdmin picks the tenant with X-Tenant-Id). New members join
 // through invitations (InvitationsController), so nobody but the user ever chooses their password.
@@ -63,6 +64,7 @@ export class UsersController {
     return orFail(await this.users.updateRole(tenantId, id, role));
   }
 
+  @LocalAuthOnly()
   @Delete(':id')
   @HttpCode(204)
   async remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
@@ -72,6 +74,7 @@ export class UsersController {
   // The caller's own account, so the principal (not @TenantId) decides whose password this is.
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
   @SelfService()
+  @LocalAuthOnly()
   @Put('me/password')
   @HttpCode(204)
   async changePassword(

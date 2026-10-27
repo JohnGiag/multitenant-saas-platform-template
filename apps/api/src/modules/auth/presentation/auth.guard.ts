@@ -1,19 +1,12 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  UnauthorizedException,
-  type CanActivate,
-  type ExecutionContext,
-} from '@nestjs/common';
+import { Inject, Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Principal, Role } from '@repo/shared-types';
-import { decideAccess } from '../domain/access-policy.js';
+import type { Principal } from '@repo/shared-types';
 import { API_KEY_SERVICE, type ApiKeyService } from '../domain/ports/api-key.port.js';
 import { AUTH_SERVICE, type AuthService } from '../domain/ports/auth.port.js';
-import { IS_PUBLIC_KEY, ROLES_KEY, SELF_SERVICE_KEY, type AuthenticatedRequest } from './decorators.js';
+import { IS_PUBLIC_KEY, type AuthenticatedRequest } from './decorators.js';
 
-// Registered globally: authenticates every request, then applies the deny-by-default policy.
+// Registered globally, first: only works out who is calling and never rejects, so callers with a bad
+// token or API key still reach RateLimitGuard (as anonymous, per IP). AccessGuard then decides.
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
@@ -23,22 +16,10 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const targets = [ctx.getHandler(), ctx.getClass()];
-    if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets)) return true;
-
+    if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [ctx.getHandler(), ctx.getClass()])) return true;
     const req = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
     req.principal = await this.authenticate(req);
-    const roles = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES_KEY, targets);
-    const selfService = this.reflector.getAllAndOverride<boolean>(SELF_SERVICE_KEY, targets) ?? false;
-
-    switch (decideAccess(req.principal, roles, req.method, selfService)) {
-      case 'unauthenticated':
-        throw new UnauthorizedException();
-      case 'forbidden':
-        throw new ForbiddenException();
-      case 'allow':
-        return true;
-    }
+    return true;
   }
 
   private async authenticate(req: AuthenticatedRequest): Promise<Principal | null> {

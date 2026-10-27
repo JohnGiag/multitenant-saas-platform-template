@@ -11,7 +11,9 @@ import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/ra
 import { loginAccountKey, passwordResetKey } from '../../rate-limit/domain/rate-limit-policy.js';
 import { clearAccountAttempts, countAccountAttempt } from '../../rate-limit/presentation/account-attempts.js';
 import { PASSWORD_RESET_SERVICE, type PasswordResetService } from '../domain/ports/password-reset.service.js';
+import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 
+@LocalAuthOnly()
 @Controller('auth/password-reset')
 export class PasswordResetController {
   private readonly logger = new Logger('PasswordReset');

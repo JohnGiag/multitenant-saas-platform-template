@@ -10,8 +10,9 @@ import { loadOptionalModules } from './modules/system/infrastructure/optional-mo
 export async function createApp({ optionalModulesDir, ...options }: NestApplicationOptions & { optionalModulesDir?: string } = {}) {
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule.register(await loadOptionalModules(optionalModulesDir)),
-    // Open SSE streams never end on their own; without this, shutdown waits for them forever.
-    { forceCloseConnections: true, ...options },
+    // forceCloseConnections: open SSE streams never end on their own, so shutdown would wait forever.
+    // rawBody: webhook signatures (Clerk) cover the exact bytes received, not the parsed JSON.
+    { forceCloseConnections: true, rawBody: true, ...options },
   );
   app.setGlobalPrefix('v1');
   applyTrustProxy(app, app.get(ConfigService).get<string>('TRUST_PROXY_HOPS', '0'));

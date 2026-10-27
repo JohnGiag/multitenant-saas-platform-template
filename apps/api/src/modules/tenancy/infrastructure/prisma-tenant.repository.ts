@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import type { AdminUpdateTenantDto, CreateTenantDto, CursorPage, Tenant, TenantPageQuery } from '@repo/shared-types';
 import { toCursorPage } from '../../../common/cursor-page.js';
+import { hasCode } from '../../../common/prisma-errors.js';
 import type { Tenant as TenantRow } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
-import type { DeleteTenantResult, TenantRepository } from '../domain/ports/tenant.repository.js';
+import type { TenantRepository } from '../domain/ports/tenant.repository.js';
 
 const toTenant = (row: TenantRow): Tenant => ({
   id: row.id,
@@ -12,8 +13,6 @@ const toTenant = (row: TenantRow): Tenant => ({
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 });
-
-const hasCode = (error: unknown, code: string) => (error as { code?: unknown } | null)?.code === code;
 
 @Injectable()
 export class PrismaTenantRepository implements TenantRepository {
@@ -47,14 +46,16 @@ export class PrismaTenantRepository implements TenantRepository {
     }
   }
 
-  async delete(id: string): Promise<DeleteTenantResult> {
-    try {
-      await this.prisma.tenant.delete({ where: { id } });
-      return 'deleted';
-    } catch (error) {
-      if (hasCode(error, 'P2025')) return 'not_found';
-      if (hasCode(error, 'P2003')) return 'has_data';
-      throw error;
-    }
+  async delete(id: string): Promise<boolean> {
+    const where = { tenantId: id };
+    const [, , , , { count }] = await this.prisma.$transaction([
+      this.prisma.tenantIntegration.deleteMany({ where }),
+      this.prisma.apiKey.deleteMany({ where }),
+      this.prisma.invitation.deleteMany({ where }),
+      // Also removes their push devices and password resets (cascade).
+      this.prisma.user.deleteMany({ where }),
+      this.prisma.tenant.deleteMany({ where: { id } }),
+    ]);
+    return count === 1;
   }
 }

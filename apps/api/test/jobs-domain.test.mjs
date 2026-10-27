@@ -25,8 +25,19 @@ test('job config: defaults, overrides, and a bad value fails at boot', () => {
 
 test('env validation rejects an unknown AUTH_PROVIDER before anything starts', () => {
   assert.deepEqual(validateEnv({ X: '1' }), { X: '1' });
-  assert.doesNotThrow(() => validateEnv({ AUTH_PROVIDER: 'clerk' }));
+  assert.doesNotThrow(() => validateEnv({ AUTH_PROVIDER: 'local' }));
   assert.throws(() => validateEnv({ AUTH_PROVIDER: 'clerck' }), /Unknown AUTH_PROVIDER "clerck"/);
+});
+
+test('Clerk mode needs its issuer and webhook secret before anything starts', () => {
+  const clerk = { AUTH_PROVIDER: 'clerk', CLERK_ISSUER: 'https://x.clerk.accounts.dev', CLERK_WEBHOOK_SECRET: 'whsec_abc' };
+  assert.doesNotThrow(() => validateEnv(clerk));
+  assert.throws(() => validateEnv({ ...clerk, CLERK_ISSUER: undefined }), /CLERK_ISSUER/);
+  assert.throws(() => validateEnv({ ...clerk, CLERK_ISSUER: 'not a url' }), /CLERK_ISSUER/);
+  assert.throws(() => validateEnv({ ...clerk, CLERK_WEBHOOK_SECRET: undefined }), /CLERK_WEBHOOK_SECRET/);
+  assert.throws(() => validateEnv({ ...clerk, CLERK_WEBHOOK_SECRET: 'sk_live_wrong_secret' }), /CLERK_WEBHOOK_SECRET/);
+  // Local mode does not need them.
+  assert.doesNotThrow(() => validateEnv({ AUTH_PROVIDER: 'local' }));
 });
 
 test('channel registry: lookup by key, and a duplicate key is a startup error', () => {

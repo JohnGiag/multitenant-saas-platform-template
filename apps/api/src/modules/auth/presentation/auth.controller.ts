@@ -6,6 +6,7 @@ import { loginAccountKey } from '../../rate-limit/domain/rate-limit-policy.js';
 import { clearAccountAttempts, countAccountAttempt } from '../../rate-limit/presentation/account-attempts.js';
 import { AUTH_SERVICE, type AuthService } from '../domain/ports/auth.port.js';
 import { CurrentPrincipal, Public, Roles } from './decorators.js';
+import { LocalAuthOnly } from './local-auth-only.js';
 
 @Controller('auth')
 export class AuthController {
@@ -15,6 +16,7 @@ export class AuthController {
   ) {}
 
   @Public()
+  @LocalAuthOnly()
   @Post('login')
   @HttpCode(200)
   async login(

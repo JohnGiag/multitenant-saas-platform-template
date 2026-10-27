@@ -29,9 +29,11 @@ import { Public, Roles } from '../../auth/presentation/decorators.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { INVITATION_SERVICE, type InvitationService } from '../domain/ports/invitation.service.js';
 import { rethrowMailError } from './mail-errors.js';
+import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 
 // Users join only by invitation (a SuperAdmin picks the tenant with X-Tenant-Id). Invitations always
 // go out with the platform's email credentials, so no tenant can read the link and accept it.
+@LocalAuthOnly()
 @Controller('invitations')
 @Roles('SuperAdmin', 'TenantAdmin')
 export class InvitationsController {

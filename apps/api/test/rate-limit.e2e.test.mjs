@@ -48,6 +48,18 @@ test('the tier sets the limit', async () => {
   assert.equal(header(res, 'x-ratelimit-limit'), TIER_LIMITS.pro);
 });
 
+test('rejected credentials are limited per client IP too', async () => {
+  const ip = randomIp();
+  // Well-formed, so each one costs a database lookup before it is refused.
+  const fakeKey = `eak_${'0'.repeat(12)}_${'A'.repeat(43)}`;
+  for (let i = 0; i < PUBLIC_LIMIT; i++) assert.equal((await call('GET', '/auth/me', { apiKey: fakeKey, ip })).status, 401);
+  const blocked = await call('GET', '/auth/me', { apiKey: fakeKey, ip });
+  assert.equal(blocked.status, 429);
+  assert.ok(header(blocked, 'retry-after') >= 1);
+  // Valid callers from the same IP keep their own bucket.
+  assert.equal((await call('GET', '/auth/me', { token: tokens.b, ip })).status, 200);
+});
+
 const loginAs = (email, password, ip) =>
   call('POST', '/auth/login', { ip, body: { tenantId: tenants.free, email, password } });
 

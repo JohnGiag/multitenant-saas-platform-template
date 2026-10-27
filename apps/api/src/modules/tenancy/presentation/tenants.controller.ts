@@ -1,6 +1,5 @@
 import {
   Body,
-  ConflictException,
   Controller,
   Delete,
   Get,
@@ -29,6 +28,7 @@ import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Roles } from '../../auth/presentation/decorators.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../domain/ports/tenant.repository.js';
 import { TenantId } from './tenant-context.js';
+import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 
 @Controller('tenants')
 export class TenantsController {
@@ -42,6 +42,7 @@ export class TenantsController {
   }
 
   @Roles('SuperAdmin', 'TenantAdmin')
+  @LocalAuthOnly()
   @Patch('current')
   async updateCurrent(
     @TenantId() tenantId: string,
@@ -52,6 +53,7 @@ export class TenantsController {
 
   // Cross-tenant operations below: SuperAdmin only.
   @Roles('SuperAdmin')
+  @LocalAuthOnly()
   @Post()
   create(@Body(new ZodValidationPipe(CreateTenantSchema)) body: CreateTenantDto): Promise<Tenant> {
     return this.tenants.create(body);
@@ -73,12 +75,11 @@ export class TenantsController {
   }
 
   @Roles('SuperAdmin')
+  @LocalAuthOnly()
   @Delete(':id')
   @HttpCode(204)
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    const result = await this.tenants.delete(id);
-    if (result === 'not_found') throw new NotFoundException();
-    if (result === 'has_data') throw new ConflictException('Tenant still has data (users, invitations, API keys, integrations…)');
+    if (!(await this.tenants.delete(id))) throw new NotFoundException();
   }
 
   private found(tenant: Tenant | null): Tenant {

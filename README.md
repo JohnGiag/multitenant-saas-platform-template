@@ -46,8 +46,19 @@ pnpm --filter @repo/api db:deploy
 
 - `POST /v1/auth/login` with `{ tenantId, email, password }` returns a 15-minute JWT. Send it as `Authorization: Bearer <token>`.
 - Headless clients send `X-API-Key: <key>`. A `TenantAdmin` creates keys with `POST /v1/api-keys` (the key is shown once), lists them newest first with `GET /v1/api-keys?cursor=&limit=` (also `Auditor`) and revokes them with `DELETE /v1/api-keys/:id`.
-- `AUTH_PROVIDER=local|clerk` picks the identity provider. The Clerk adapter is still a stub that rejects every token.
+- `AUTH_PROVIDER=local|clerk` picks the identity provider for the whole deployment (see Clerk mode below).
 - Bootstrapping: insert the first `SuperAdmin` directly in the database (with an Argon2id `password_hash`). From then on, a `SuperAdmin` creates tenants and invites their first `TenantAdmin` through the API (see Users below).
+
+## Clerk mode (`AUTH_PROVIDER=clerk`)
+
+Clerk is where people and organizations are created; the API mirrors them through webhooks. **Each Clerk Organization is one tenant**, each membership one user of that tenant.
+
+- **Setup:** set `CLERK_ISSUER` (your Frontend API URL), `CLERK_WEBHOOK_SECRET` and `CLERK_AUTHORIZED_PARTIES` (see `.env.example`). In the Clerk dashboard, enable Organizations and add a webhook endpoint at `<api>/v1/auth/clerk/webhook` subscribed to `organization.created`, `organization.updated`, `organization.deleted`, `organizationMembership.created`, `organizationMembership.deleted`, `user.updated` and `user.deleted`. Locally, relay it with the Clerk CLI: `clerk webhooks listen --forward-to http://localhost:3000/v1/auth/clerk/webhook`.
+- **Requests:** the dashboard sends the Clerk session token as `Authorization: Bearer <token>`. It is verified against Clerk's published keys; its active organization picks the tenant. A token without an active organization, or for an organization or user not mirrored yet, gets `401`.
+- **Mirrored from Clerk:** organizations (created, renamed, deleted; deleting one removes the tenant and all its data), memberships (a new `org:admin` starts as `TenantAdmin`, anyone else as `User`) and user emails. Webhooks are verified (Svix signature, 5-minute window) and may arrive in any order or more than once.
+- **Still ours:** roles after a member joins (`PATCH /v1/users/:id`), tiers, API keys, BYOK integrations, notifications and rate limits.
+- **Answer `409` ("managed in Clerk"):** sign-in, password change and reset, invitations, creating or deleting tenants, renaming the current tenant and removing members. Those happen in Clerk.
+- **First SuperAdmin:** create the platform organization in Clerk and join it; then set that user's `role` to `SuperAdmin` in the database.
 
 ## Users and invitations
 
@@ -88,6 +99,6 @@ Behind a load balancer, set `TRUST_PROXY_HOPS` to the number of proxies so the r
 - Every request acts on the caller's own tenant. A `SuperAdmin` may act on another tenant by sending `X-Tenant-Id: <tenantId>`; anyone else sending a different id gets `403`.
 - A `SuperAdmin` manages tenants (and, once built, their users) only. Integrations (BYOK secrets) and notifications belong to each tenant's own `TenantAdmin`; a `SuperAdmin` gets `403` there, with or without `X-Tenant-Id`.
 - `GET /v1/tenants/current` reads the current tenant; `PATCH /v1/tenants/current` renames it (`TenantAdmin`).
-- `SuperAdmin` only: `POST /v1/tenants`, `GET /v1/tenants?cursor=&limit=`, `PATCH /v1/tenants/:id` (name, tier), `DELETE /v1/tenants/:id` (refused with `409` while the tenant still has data).
+- `SuperAdmin` only: `POST /v1/tenants`, `GET /v1/tenants?cursor=&limit=`, `PATCH /v1/tenants/:id` (name, tier), `DELETE /v1/tenants/:id` (deletes the tenant with all its users, invitations, API keys and integrations).
 - `GET /v1/system/capabilities` lists the installed optional modules (`apps/api/src/optional/<key>/`) and whether each is enabled for the current tenant. Delete a module's folder to uninstall it; nothing else needs to change.
 - BYOK secrets: `PUT /v1/integrations/:provider` with `{ config, enabled? }` stores a provider's config encrypted with AES-256-GCM (only providers used by an installed module; others get `404`); `GET /v1/integrations` lists them with masked values only; `DELETE /v1/integrations/:provider` removes them. Secrets are never returned by the API.

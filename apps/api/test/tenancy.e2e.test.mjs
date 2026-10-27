@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { cleanup, seedTenant, startApp } from './helpers.mjs';
+import { cleanup, db, seedTenant, startApp } from './helpers.mjs';
 
 const tenants = {};
 const tokens = {};
@@ -81,8 +81,23 @@ test('SuperAdmin creates, lists with a cursor, updates and deletes tenants', asy
   assert.ok(second.body.items[0].id > first.body.items[0].id, 'pages must move forward');
   assert.equal((await call('GET', '/tenants?limit=500', { token: tokens.super })).status, 400);
 
-  // Refuses to delete a tenant that still has users.
-  assert.equal((await call('DELETE', `/tenants/${tenants.a}`, { token: tokens.super })).status, 409);
   assert.equal((await call('DELETE', `/tenants/${tenants.created}`, { token: tokens.super })).status, 204);
   assert.equal((await call('DELETE', `/tenants/${tenants.created}`, { token: tokens.super })).status, 404);
+});
+
+test('deleting a tenant removes everything in it, even its last TenantAdmin', async () => {
+  const id = await seedTenant('tenancy-e2e-doomed', { admin: 'TenantAdmin', user: 'User' });
+  await db.apiKey.create({ data: { tenantId: id, name: 'k', prefix: crypto.randomUUID().slice(0, 12), secretHash: Uint8Array.of(1) } });
+  await db.invitation.create({
+    data: { tenantId: id, email: 'new@example.com', tokenHash: crypto.getRandomValues(new Uint8Array(32)), expiresAt: new Date() },
+  });
+  await db.tenantIntegration.create({ data: { tenantId: id, provider: 'resend', encryptedConfig: Uint8Array.of(1), maskedConfig: {} } });
+
+  assert.equal((await call('DELETE', `/tenants/${id}`, { token: tokens.super })).status, 204);
+  assert.equal(await db.tenant.count({ where: { id } }), 0);
+  for (const model of ['user', 'apiKey', 'invitation', 'tenantIntegration']) {
+    assert.equal(await db[model].count({ where: { tenantId: id } }), 0, model);
+  }
+  // Other tenants are untouched.
+  assert.equal(await db.user.count({ where: { tenantId: tenants.a } }), 3);
 });

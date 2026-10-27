@@ -17,7 +17,7 @@ interface TenantRequest extends AuthenticatedRequest {
   tenantId?: string;
 }
 
-// Global, registered after AuthGuard (see AppModule), so the principal is already verified.
+// Global, registered last (see AppModule), so the principal is verified and allowed on this route.
 // Never reads the body. A guard, so a 400/403/404 is answered before any SSE stream starts.
 @Injectable()
 export class TenantContextGuard implements CanActivate {
