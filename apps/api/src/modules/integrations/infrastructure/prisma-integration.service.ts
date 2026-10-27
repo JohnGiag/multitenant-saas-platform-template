@@ -87,4 +87,13 @@ export class PrismaIntegrationService implements IntegrationService {
     if (!row?.enabled) return null;
     return JSON.parse(openSecret(this.masterKey, row.encryptedConfig, context(tenantId, provider)));
   }
+
+  async enabledProviders(tenantId: string, providers: string[]): Promise<Set<string>> {
+    if (providers.length === 0) return new Set();
+    const rows = await this.prisma.tenantIntegration.findMany({
+      where: { tenantId, enabled: true, provider: { in: providers } },
+      select: { provider: true },
+    });
+    return new Set(rows.map((r) => r.provider));
+  }
 }

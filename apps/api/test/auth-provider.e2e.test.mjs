@@ -1,15 +1,14 @@
 // Runs in its own process so AUTH_PROVIDER can be overridden before the app boots.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { NestFactory } from '@nestjs/core';
 import { SignJWT } from 'jose';
-import { AppModule } from '../dist/app.module.js';
+import { createApp } from '../dist/app.js';
 
 async function boot(provider) {
   process.env.AUTH_PROVIDER = provider;
-  const app = await NestFactory.create(AppModule, { logger: false, abortOnError: false });
+  const app = await createApp({ logger: false, abortOnError: false });
   await app.listen(0);
-  return { app, base: `http://127.0.0.1:${app.getHttpServer().address().port}` };
+  return { app, base: `http://127.0.0.1:${app.getHttpServer().address().port}/v1` };
 }
 
 test('AUTH_PROVIDER=clerk swaps in the Clerk adapter, which fails closed', async () => {

@@ -1,14 +1,17 @@
 // Shared e2e setup. Needs the docker-compose database and apps/api/.env (see README).
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { hash } from '@node-rs/argon2';
-import { NestFactory } from '@nestjs/core';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { AppModule } from '../dist/app.module.js';
+import { createApp } from '../dist/app.js';
 import { PrismaClient } from '../dist/generated/prisma/client.js';
 
 if (existsSync('.env')) process.loadEnvFile();
 
 export const PASSWORD = 'correct horse battery staple';
+export const FIXTURES = join(import.meta.dirname, 'fixtures');
+// email (resend), push (fcm), storage (r2) and webhooks (no integration).
+export const OPTIONAL_FIXTURES = join(FIXTURES, 'optional');
 export const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 const passwordHash = hash(PASSWORD);
 
@@ -27,9 +30,9 @@ export async function seedTenant(name, users = {}) {
   return id;
 }
 
-export async function startApp() {
-  const app = await NestFactory.create(AppModule, { logger: false });
-  app.setGlobalPrefix('v1');
+// optionalModulesDir: install fixture optional modules instead of the real src/optional ones.
+export async function startApp({ optionalModulesDir } = {}) {
+  const app = await createApp({ logger: false, optionalModulesDir });
   await app.listen(0);
   const base = `http://127.0.0.1:${app.getHttpServer().address().port}/v1`;
 

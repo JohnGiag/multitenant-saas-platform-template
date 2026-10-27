@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { INTEGRATION_SERVICE } from '../dist/modules/integrations/domain/ports/integration.service.js';
-import { cleanup, db, seedTenant, startApp } from './helpers.mjs';
+import { cleanup, db, OPTIONAL_FIXTURES, seedTenant, startApp } from './helpers.mjs';
 
 const SECRET = 're_live_1234567890abcdef';
 const tenants = {};
@@ -13,7 +13,7 @@ before(async () => {
   tenants.a = await seedTenant('byok-e2e-a', { admin: 'TenantAdmin', user: 'User', auditor: 'Auditor' });
   tenants.b = await seedTenant('byok-e2e-b', { admin: 'TenantAdmin' });
   let login;
-  ({ app, call, login } = await startApp());
+  ({ app, call, login } = await startApp({ optionalModulesDir: OPTIONAL_FIXTURES }));
   secrets = app.get(INTEGRATION_SERVICE);
   tokens.super = await login(tenants.platform, 'super@example.com');
   tokens.adminA = await login(tenants.a, 'admin@example.com');
@@ -83,6 +83,18 @@ test('list pages by provider', async () => {
   const second = await (await call('GET', '/integrations?limit=2&cursor=r2', { token: tokens.adminA })).json();
   assert.deepEqual(second.items.map((i) => i.provider), ['resend']);
   assert.equal(second.nextCursor, null);
+});
+
+test('only providers of installed modules can be configured; any can be removed', async () => {
+  const typo = await put(tokens.adminA, 'resned', { config: { apiKey: 'x' } });
+  assert.equal(typo.status, 404);
+  assert.match((await typo.json()).message, /No installed module uses integration "resned"/);
+
+  // Secrets left behind by an uninstalled module can still be deleted.
+  await db.tenantIntegration.create({
+    data: { tenantId: tenants.a, provider: 'legacy', encryptedConfig: Uint8Array.of(1), maskedConfig: {} },
+  });
+  assert.equal((await call('DELETE', '/integrations/legacy', { token: tokens.adminA })).status, 204);
 });
 
 test('validation, disabling and removal', async () => {

@@ -1,7 +1,5 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module.js';
+import { createApp } from './app.js';
 
-const app = await NestFactory.create(AppModule);
-app.setGlobalPrefix('v1');
+const app = await createApp();
 app.enableShutdownHooks();
 await app.listen(process.env.PORT ?? 3000);

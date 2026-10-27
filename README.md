@@ -38,6 +38,7 @@ pnpm --filter @repo/api db:deploy
 | `pnpm build` | Builds every package |
 | `pnpm typecheck` | Type-checks every package |
 | `pnpm test` | Builds, then runs all tests. API tests need the database running and `.env` set up |
+| `pnpm coverage` | Same as `pnpm test` for the API, plus a line/branch/function coverage report per source file |
 | `pnpm --filter @repo/api db:migrate` | Creates and applies a migration after a schema change (development) |
 
 ## Auth at a glance
@@ -52,4 +53,5 @@ pnpm --filter @repo/api db:deploy
 - Every request acts on the caller's own tenant. A `SuperAdmin` may act on another tenant by sending `X-Tenant-Id: <tenantId>`; anyone else sending a different id gets `403`.
 - `GET /v1/tenants/current` reads the current tenant; `PATCH /v1/tenants/current` renames it (`TenantAdmin`).
 - `SuperAdmin` only: `POST /v1/tenants`, `GET /v1/tenants?cursor=&limit=`, `PATCH /v1/tenants/:id` (name, tier), `DELETE /v1/tenants/:id` (refused with `409` while the tenant still has data).
-- BYOK secrets: `PUT /v1/integrations/:provider` with `{ config, enabled? }` stores a provider's config encrypted with AES-256-GCM; `GET /v1/integrations` lists them with masked values only; `DELETE /v1/integrations/:provider` removes them. Secrets are never returned by the API.
+- `GET /v1/system/capabilities` lists the installed optional modules (`apps/api/src/optional/<key>/`) and whether each is enabled for the current tenant. Delete a module's folder to uninstall it; nothing else needs to change.
+- BYOK secrets: `PUT /v1/integrations/:provider` with `{ config, enabled? }` stores a provider's config encrypted with AES-256-GCM (only providers used by an installed module; others get `404`); `GET /v1/integrations` lists them with masked values only; `DELETE /v1/integrations/:provider` removes them. Secrets are never returned by the API.

@@ -1,8 +1,12 @@
 import { z } from 'zod';
+import { IntegrationProviderSchema } from './integration.js';
 
-// Only installed modules are listed; `enabled` says whether the current tenant has it switched on.
+// Only installed optional modules are listed; a deleted module simply disappears.
 export const CapabilitySchema = z.object({
   key: z.string(),
+  // The tenant integration that configures it (settings page target), or null if it needs none.
+  integration: IntegrationProviderSchema.nullable(),
+  // Whether the module is usable for the current tenant.
   enabled: z.boolean(),
 });
 export type Capability = z.infer<typeof CapabilitySchema>;

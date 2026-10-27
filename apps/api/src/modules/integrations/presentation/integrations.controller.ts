@@ -10,6 +10,7 @@ import {
 } from '@repo/shared-types';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Roles } from '../../auth/presentation/decorators.js';
+import { OPTIONAL_MODULES, type OptionalModule } from '../../system/domain/optional-module.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { INTEGRATION_SERVICE, type IntegrationService } from '../domain/ports/integration.service.js';
 
@@ -19,7 +20,10 @@ const ProviderPipe = new ZodValidationPipe(IntegrationProviderSchema);
 @Controller('integrations')
 @Roles('SuperAdmin', 'TenantAdmin')
 export class IntegrationsController {
-  constructor(@Inject(INTEGRATION_SERVICE) private readonly integrations: IntegrationService) {}
+  constructor(
+    @Inject(INTEGRATION_SERVICE) private readonly integrations: IntegrationService,
+    @Inject(OPTIONAL_MODULES) private readonly modules: OptionalModule[],
+  ) {}
 
   @Roles('SuperAdmin', 'TenantAdmin', 'Auditor')
   @Get()
@@ -36,9 +40,14 @@ export class IntegrationsController {
     @Param('provider', ProviderPipe) provider: string,
     @Body(new ZodValidationPipe(UpsertTenantIntegrationSchema)) body: UpsertTenantIntegrationDto,
   ): Promise<TenantIntegration> {
+    // Only providers an installed module uses; a typo would otherwise "succeed" and never take effect.
+    if (!this.modules.some((m) => m.integration === provider)) {
+      throw new NotFoundException(`No installed module uses integration "${provider}"`);
+    }
     return this.integrations.upsert(tenantId, provider, body);
   }
 
+  // Not restricted to installed modules, so secrets of an uninstalled module can still be removed.
   @Delete(':provider')
   @HttpCode(204)
   async remove(@TenantId() tenantId: string, @Param('provider', ProviderPipe) provider: string): Promise<void> {

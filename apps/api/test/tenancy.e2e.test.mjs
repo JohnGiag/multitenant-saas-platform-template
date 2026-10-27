@@ -71,6 +71,8 @@ test('SuperAdmin creates, lists with a cursor, updates and deletes tenants', asy
   );
   assert.equal(updated.body.tier, 'pro');
   assert.equal((await call('PATCH', `/tenants/${tenants.created}`, { token: tokens.super, body: {} })).status, 400);
+  const unknown = `/tenants/${crypto.randomUUID()}`;
+  assert.equal((await call('PATCH', unknown, { token: tokens.super, body: { tier: 'pro' } })).status, 404);
 
   const first = await json(await call('GET', '/tenants?limit=1', { token: tokens.super }));
   assert.equal(first.body.items.length, 1);
