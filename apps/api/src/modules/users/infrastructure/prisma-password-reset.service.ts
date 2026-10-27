@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
+import { MAX_ACCOUNTS_PER_EMAIL } from '../../auth/domain/account-lookup.js';
 import { hashPassword } from '../../auth/infrastructure/password.js';
 import { SYSTEM_MAILER, type SystemMailer } from '../../mail/domain/ports/system-mailer.js';
 import { passwordResetEmail } from '../domain/emails.js';
@@ -16,24 +17,31 @@ export class PrismaPasswordResetService implements PasswordResetService {
     @Inject(SYSTEM_MAILER) private readonly mailer: SystemMailer,
   ) {}
 
-  async request(tenantId: string, email: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({
-      where: { tenantId_email: { tenantId, email } },
-      select: { id: true, passwordHash: true, tenant: { select: { name: true } } },
+  async request(email: string): Promise<void> {
+    // Across tenants (see MAX_ACCOUNTS_PER_EMAIL): the links only ever go to this email's owner. Accounts
+    // that sign in through an external provider have no password to reset.
+    const users = await this.prisma.user.findMany({
+      where: { email, passwordHash: { not: null } },
+      orderBy: { id: 'asc' },
+      take: MAX_ACCOUNTS_PER_EMAIL,
+      select: { id: true, tenantId: true, tenant: { select: { name: true } } },
     });
-    // Unknown, or signs in through an external provider: nothing to reset.
-    if (!user?.passwordHash) return;
-    const { token, hash } = newOneTimeToken();
-    // Only the newest link works.
-    await this.prisma.$transaction([
-      this.prisma.passwordReset.deleteMany({ where: { userId: user.id } }),
-      this.prisma.passwordReset.create({
-        data: { tenantId, userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS) },
+    // One email per account, each naming its tenant; one failing does not stop the others.
+    await Promise.all(
+      users.map(async (user) => {
+        const { token, hash } = newOneTimeToken();
+        // Only the newest link works.
+        await this.prisma.$transaction([
+          this.prisma.passwordReset.deleteMany({ where: { tenantId: user.tenantId, userId: user.id } }),
+          this.prisma.passwordReset.create({
+            data: { tenantId: user.tenantId, userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS) },
+          }),
+        ]);
+        const link = appLink(this.config, 'reset-password', token);
+        const { subject, text } = passwordResetEmail({ tenantName: user.tenant.name, link });
+        await this.mailer.send({ to: email, subject, text });
       }),
-    ]);
-    const link = appLink(this.config, 'reset-password', token);
-    const { subject, text } = passwordResetEmail({ tenantName: user.tenant.name, link });
-    await this.mailer.send({ to: email, subject, text });
+    );
   }
 
   async confirm(token: string, password: string) {

@@ -34,7 +34,8 @@ export type AcceptInvitationDto = z.infer<typeof AcceptInvitationSchema>;
 export const AcceptedInvitationSchema = z.object({ tenantId: IdSchema, email: EmailSchema });
 export type AcceptedInvitation = z.infer<typeof AcceptedInvitationSchema>;
 
-export const PasswordResetRequestSchema = z.object({ tenantId: IdSchema, email: EmailSchema });
+// Every account with this email (in any tenant) gets its own link, naming its tenant.
+export const PasswordResetRequestSchema = z.object({ email: EmailSchema });
 export type PasswordResetRequestDto = z.infer<typeof PasswordResetRequestSchema>;
 
 export const PasswordResetConfirmSchema = z.object({ token: OneTimeTokenSchema, password: PasswordSchema });

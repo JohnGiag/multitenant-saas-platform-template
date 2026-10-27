@@ -68,3 +68,37 @@ test("a SuperAdmin's actions on a tenant are recorded in the SuperAdmin's tenant
   );
   assert.equal((await auditOf(doomed)).length, 0);
 });
+
+test('the audit log is readable newest first, page by page, by its own tenant only', async () => {
+  tenants.reader = await seedTenant('audit-e2e-reader', { admin: 'TenantAdmin', auditor: 'Auditor', user: 'User' });
+  tenants.other = await seedTenant('audit-e2e-other', { admin: 'TenantAdmin' });
+  const admin = await login(tenants.reader, 'admin@example.com');
+  for (const name of ['one', 'two', 'three']) await call('POST', '/api-keys', { token: admin, body: { name } });
+  await call('POST', '/api-keys', { token: await login(tenants.other, 'admin@example.com'), body: { name: 'elsewhere' } });
+
+  const read = async (token, query = '', extra) => {
+    const res = await call('GET', `/audit-logs${query}`, { token, ...extra });
+    return { status: res.status, body: res.ok ? await res.json() : null };
+  };
+  const ids = (await auditOf(tenants.reader)).map((r) => r.id).reverse();
+  const page1 = await read(admin, '?limit=2');
+  assert.equal(page1.status, 200);
+  assert.deepEqual(page1.body.items.map((e) => e.id), ids.slice(0, 2));
+  assert.deepEqual(Object.keys(page1.body.items[0]).sort(), ['actedOnTenantId', 'actorId', 'actorKind', 'actorRole', 'createdAt', 'id', 'method', 'route', 'status', 'targetId']);
+  const page2 = await read(admin, `?limit=2&cursor=${page1.body.nextCursor}`);
+  assert.deepEqual(page2.body.items.map((e) => e.id), ids.slice(2));
+  assert.equal(page2.body.nextCursor, null);
+
+  // Auditors read; members do not; nothing of another tenant shows up.
+  assert.equal((await read(await login(tenants.reader, 'auditor@example.com'))).body.items.length, 3);
+  assert.equal((await read(await login(tenants.reader, 'user@example.com'))).status, 403);
+  assert.equal((await auditOf(tenants.other)).length, 1);
+  assert.ok((await read(admin, '?limit=100')).body.items.every((e) => ids.includes(e.id)));
+
+  // SuperAdmin: its own platform trail, never another tenant's.
+  const platform = await read(tokens.super, '?limit=100');
+  assert.equal(platform.status, 200);
+  assert.ok(platform.body.items.every((e) => e.actorRole === 'SuperAdmin'));
+  assert.equal((await read(tokens.super, '', { tenant: tenants.reader })).status, 403);
+  assert.equal((await read(admin, '?cursor=not-a-cursor')).status, 400);
+});

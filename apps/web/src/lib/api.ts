@@ -5,8 +5,8 @@ import { cache } from 'react';
 import type { FormState } from './form-state';
 import { getTenantOverride, getToken } from './session';
 
-const API_URL = process.env.API_URL ?? 'http://localhost:3000';
-const TIMEOUT_MS = 10_000;
+export const API_URL = process.env.API_URL ?? 'http://localhost:3000';
+export const TIMEOUT_MS = 10_000;
 
 export class ApiError extends Error {
   constructor(

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { SignJWT } from 'jose';
-import { cleanup, db, seedTenant, startApp } from './helpers.mjs';
+import { LOGIN_ACCOUNT_LIMIT } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
+import { cleanup, db, PASSWORD, randomIp, seedTenant, seedUser, startApp } from './helpers.mjs';
 
 const tenants = {};
 let app, base, call, login;
@@ -86,4 +87,55 @@ test('API keys: role-gated, tenant-isolated, revocable', async () => {
   assert.equal((await call('GET', '/auth/me', { apiKey: key })).status, 401);
   assert.equal((await call('DELETE', `/api-keys/${id}`, { token: adminA })).status, 404);
   assert.equal((await call('DELETE', '/api-keys/not-a-uuid', { token: adminA })).status, 400);
+});
+
+// Sign-in by email alone looks across tenants, so these use unique emails (seedUser).
+const signIn = (body, ip) => call('POST', '/auth/login', { body, ...(ip && { ip }) });
+
+test('email and password alone sign in when they match one account', async () => {
+  const email = await seedUser(tenants.a, { role: 'TenantAdmin' });
+  const res = await signIn({ email, password: PASSWORD });
+  assert.equal(res.status, 200);
+  const me = await (await call('GET', '/auth/me', { token: (await res.json()).accessToken })).json();
+  assert.deepEqual({ tenantId: me.tenantId, role: me.role }, { tenantId: tenants.a, role: 'TenantAdmin' });
+});
+
+test('when the password matches accounts in several tenants, the caller picks one of them', async () => {
+  const email = await seedUser(tenants.a);
+  await seedUser(tenants.b, { email, role: 'TenantAdmin' });
+  const choice = await signIn({ email, password: PASSWORD });
+  assert.equal(choice.status, 200);
+  const { tenants: offered, accessToken } = await choice.json();
+  assert.equal(accessToken, undefined);
+  assert.deepEqual(offered.map((t) => t.name).sort(), ['auth-e2e-a', 'auth-e2e-b']);
+
+  const picked = await signIn({ email, password: PASSWORD, tenantId: tenants.b });
+  const me = await (await call('GET', '/auth/me', { token: (await picked.json()).accessToken })).json();
+  assert.deepEqual({ tenantId: me.tenantId, role: me.role }, { tenantId: tenants.b, role: 'TenantAdmin' });
+  // Picking still needs the password.
+  assert.equal((await signIn({ email, password: 'wrong password', tenantId: tenants.b })).status, 401);
+});
+
+test('only tenants whose account accepts the password are offered, and nothing without it', async () => {
+  const email = await seedUser(tenants.a, { password: 'the password for tenant a' });
+  await seedUser(tenants.b, { email, password: 'the password for tenant b' });
+  const res = await signIn({ email, password: 'the password for tenant b' });
+  const me = await (await call('GET', '/auth/me', { token: (await res.json()).accessToken })).json();
+  assert.equal(me.tenantId, tenants.b);
+
+  const wrong = await signIn({ email, password: 'neither of them' });
+  assert.equal(wrong.status, 401);
+  assert.ok(!(await wrong.text()).includes('auth-e2e'), 'no tenant names without the password');
+  assert.equal((await signIn({ email: `nobody-${crypto.randomUUID()}@example.com`, password: PASSWORD })).status, 401);
+});
+
+test('sign-in by email alone is limited per email, across IPs and tenants', async () => {
+  const email = await seedUser(tenants.a);
+  await seedUser(tenants.b, { email });
+  for (let i = 0; i < LOGIN_ACCOUNT_LIMIT; i++) await signIn({ email, password: 'wrong password' }, randomIp());
+  const blocked = await signIn({ email, password: PASSWORD }, randomIp());
+  assert.equal(blocked.status, 429);
+  assert.ok(Number(blocked.headers.get('retry-after')) > 0);
+  // Another email is unaffected.
+  assert.equal((await signIn({ email: await seedUser(tenants.a), password: PASSWORD }, randomIp())).status, 200);
 });

@@ -6,23 +6,33 @@ import {
   PasswordResetRequestSchema,
   SignInSchema,
   type AcceptedInvitation,
-  type AuthToken,
+  type SignInResult,
+  type TenantChoice,
 } from '@repo/shared-types';
 import { redirect } from 'next/navigation';
 import { apiFailure, publicApi } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
 import { endSession, startSession } from '@/lib/session';
 
-export async function signIn(_: FormState, form: FormData): Promise<FormState> {
-  const parsed = SignInSchema.safeParse(Object.fromEntries(form));
+// `tenants`: the password matched accounts in several tenants; the form asks which, for this `email`.
+export type SignInState = (NonNullable<FormState> & Partial<TenantChoice> & { email?: string }) | undefined;
+
+export async function signIn(_: SignInState, form: FormData): Promise<SignInState> {
+  const parsed = SignInSchema.safeParse({
+    email: form.get('email'),
+    password: form.get('password'),
+    tenantId: form.get('tenantId') || undefined,
+  });
   if (!parsed.success) return invalid(parsed.error);
-  let token: AuthToken;
+  let result: SignInResult;
   try {
-    token = await publicApi<AuthToken>('/auth/login', { method: 'POST', body: parsed.data });
+    result = await publicApi<SignInResult>('/auth/login', { method: 'POST', body: parsed.data });
   } catch (error) {
     return apiFailure(error);
   }
-  await startSession(token);
+  // Never the password: the browser still has it in the form.
+  if ('tenants' in result) return { tenants: result.tenants, email: parsed.data.email };
+  await startSession(result);
   redirect('/');
 }
 
@@ -40,7 +50,7 @@ export async function acceptInvitation(_: FormState, form: FormData): Promise<Fo
   } catch (error) {
     return apiFailure(error);
   }
-  redirect(`/login?${new URLSearchParams(account)}`);
+  redirect(`/login?${new URLSearchParams({ email: account.email })}`);
 }
 
 export async function requestPasswordReset(_: FormState, form: FormData): Promise<FormState> {
@@ -51,7 +61,7 @@ export async function requestPasswordReset(_: FormState, form: FormData): Promis
   } catch (error) {
     return apiFailure(error);
   }
-  return { success: 'If that account exists, we have emailed it a link to choose a new password.' };
+  return { success: 'If that email has an account, we have sent it a link to choose a new password (one per tenant).' };
 }
 
 export async function confirmPasswordReset(_: FormState, form: FormData): Promise<FormState> {

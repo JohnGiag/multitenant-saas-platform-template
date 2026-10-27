@@ -1,7 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Role } from '@repo/shared-types';
+import type { CursorPage, Role, StoredFile, StoredFilePageQuery } from '@repo/shared-types';
 import { z } from 'zod';
+import { toCursorPage } from '../../../common/cursor-page.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import {
   INTEGRATION_SERVICE,
@@ -86,6 +87,18 @@ export class S3StorageProvider implements StorageProvider {
     if (!mayDeleteFile(caller, file.uploaderId)) throw new StorageForbiddenError();
     await this.deleteFromPlatform(key);
     await this.prisma.storageObject.deleteMany({ where: { tenantId, key } });
+  }
+
+  // Newest first: ids are UUIDv7, so id order is creation order, served by the (tenant_id, id) index.
+  async list(tenantId: string, { cursor, limit }: StoredFilePageQuery): Promise<CursorPage<StoredFile>> {
+    const rows = await this.prisma.storageObject.findMany({
+      where: { tenantId, ...(cursor && { id: { lt: cursor } }) },
+      orderBy: { id: 'desc' },
+      take: limit + 1,
+      select: { id: true, key: true, size: true, uploaderId: true, createdAt: true },
+    });
+    const files = rows.map((r) => ({ ...r, filename: r.key.split('/').at(-1) ?? r.key, createdAt: r.createdAt.toISOString() }));
+    return toCursorPage(files, limit, (f) => f.id);
   }
 
   // Tenant deleted: its files in the platform bucket go too (their rows follow by cascade). Files in its

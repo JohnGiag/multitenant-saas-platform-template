@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { after, before, beforeEach, test } from 'node:test';
 import { LOGIN_ACCOUNT_LIMIT } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
-import { cleanup, db, PASSWORD, seedTenant, startApp, waitFor } from './helpers.mjs';
+import { cleanup, db, PASSWORD, seedTenant, seedUser, startApp, waitFor } from './helpers.mjs';
 
 const NEW_PASSWORD = 'my very own passphrase';
 const emails = [];
@@ -161,47 +161,68 @@ test('without any email credentials, invitations are refused and nothing is kept
   }
 });
 
-const requestReset = (email, tenantId = tenants.a) => call('POST', '/auth/password-reset', { body: { tenantId, email } });
+// Resets look up every account with the email, in any tenant, so these tests use unique emails (seedUser).
+const requestReset = (email) => call('POST', '/auth/password-reset', { body: { email } });
 const confirmReset = (token, password = NEW_PASSWORD) =>
   call('POST', '/auth/password-reset/confirm', { body: { token, password } });
 
 test('password reset: the user gets a link and chooses a new password', async () => {
-  assert.equal((await requestReset('user@example.com')).status, 202);
+  const email = await seedUser(tenants.a);
+  assert.equal((await requestReset(email)).status, 202);
   await waitFor(() => emails.length === 1);
-  const [email] = emails;
+  const [sent] = emails;
   // The audit case: a tenant admin owning the tenant's Resend account must not see reset links.
-  assert.equal(email.apiKey, PLATFORM.apiKey, 'reset links never go through a tenant-controlled account');
-  assert.match(email.text, /https:\/\/app\.example\.test\/reset-password\?token=/);
+  assert.equal(sent.apiKey, PLATFORM.apiKey, 'reset links never go through a tenant-controlled account');
+  assert.match(sent.text, /https:\/\/app\.example\.test\/reset-password\?token=/);
 
-  assert.equal((await confirmReset(tokenIn(email))).status, 204);
-  assert.equal(await login(tenants.a, 'user@example.com'), 401);
-  assert.equal(typeof (await login(tenants.a, 'user@example.com', NEW_PASSWORD)), 'string');
-  assert.equal((await confirmReset(tokenIn(email))).status, 400, 'single use');
+  assert.equal((await confirmReset(tokenIn(sent))).status, 204);
+  assert.equal(await login(tenants.a, email), 401);
+  assert.equal(typeof (await login(tenants.a, email, NEW_PASSWORD)), 'string');
+  assert.equal((await confirmReset(tokenIn(sent))).status, 400, 'single use');
 });
 
 test('password reset reveals nothing about unknown accounts', async () => {
-  const res = await requestReset('nobody@example.com');
+  const res = await requestReset(`nobody-${crypto.randomUUID()}@example.com`);
   assert.equal(res.status, 202);
   await sleep(300);
   assert.equal(emails.length, 0);
 });
 
 test('an expired reset link is refused', async () => {
-  await requestReset('auditor@example.com');
+  await requestReset(await seedUser(tenants.a, { role: 'Auditor' }));
   await waitFor(() => emails.length === 1);
   await db.passwordReset.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
   assert.equal((await confirmReset(tokenIn(emails[0]))).status, 400);
 });
 
-test('a reset lifts a login lockout, and reset requests are limited per account', async () => {
-  for (let i = 0; i < LOGIN_ACCOUNT_LIMIT; i++) await login(tenants.a, 'admin@example.com', 'wrong');
-  assert.equal(await login(tenants.a, 'admin@example.com'), 429);
+test('an email with accounts in several tenants gets one link per account, each naming its tenant', async () => {
+  const email = await seedUser(tenants.a);
+  await seedUser(tenants.b, { email });
+  assert.equal((await requestReset(email)).status, 202);
+  await waitFor(() => emails.length === 2);
+  assert.deepEqual(emails.map((e) => e.subject).sort(), ['Reset your invite-e2e-a password', 'Reset your invite-e2e-b password']);
 
-  await requestReset('admin@example.com');
+  // Each link resets only its own account.
+  const forB = emails.find((e) => e.subject.includes('invite-e2e-b'));
+  assert.equal((await confirmReset(tokenIn(forB))).status, 204);
+  assert.equal(typeof (await login(tenants.b, email, NEW_PASSWORD)), 'string');
+  assert.equal(typeof (await login(tenants.a, email)), 'string', 'the other account keeps its password');
+});
+
+test('a reset lifts a login lockout, and reset requests are limited per email', async () => {
+  const email = await seedUser(tenants.a, { role: 'TenantAdmin' });
+  for (let i = 0; i < LOGIN_ACCOUNT_LIMIT; i++) await login(tenants.a, email, 'wrong');
+  assert.equal(await login(tenants.a, email), 429);
+  for (let i = 0; i < LOGIN_ACCOUNT_LIMIT; i++) await call('POST', '/auth/login', { body: { email, password: 'wrong' } });
+  assert.equal((await call('POST', '/auth/login', { body: { email, password: PASSWORD } })).status, 429);
+
+  await requestReset(email);
   await waitFor(() => emails.length === 1);
   assert.equal((await confirmReset(tokenIn(emails[0]))).status, 204);
-  assert.equal(typeof (await login(tenants.a, 'admin@example.com', NEW_PASSWORD)), 'string');
+  // Both the per-account and the per-email lockout are lifted.
+  assert.equal(typeof (await login(tenants.a, email, NEW_PASSWORD)), 'string');
+  assert.equal((await call('POST', '/auth/login', { body: { email, password: NEW_PASSWORD } })).status, 200);
 
-  for (let i = 1; i < LOGIN_ACCOUNT_LIMIT; i++) await requestReset('admin@example.com');
-  assert.equal((await requestReset('admin@example.com')).status, 429);
+  for (let i = 1; i < LOGIN_ACCOUNT_LIMIT; i++) await requestReset(email);
+  assert.equal((await requestReset(email)).status, 429);
 });

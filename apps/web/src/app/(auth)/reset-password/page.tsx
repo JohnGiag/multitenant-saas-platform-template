@@ -28,7 +28,6 @@ export default async function ResetPasswordPage({ searchParams }: PageProps<'/re
           </ActionForm>
         ) : (
           <ActionForm action={requestPasswordReset} submitLabel="Send link">
-            <Field id="tenantId" name="tenantId" label="Tenant ID" required autoComplete="organization" spellCheck={false} />
             <Field id="email" name="email" label="Email" type="email" required autoComplete="username" />
           </ActionForm>
         )}

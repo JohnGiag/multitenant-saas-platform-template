@@ -15,11 +15,15 @@ import {
 import {
   CreateUploadSchema,
   StorageKeyQuerySchema,
+  StoredFilePageQuerySchema,
   type CreateUploadDto,
+  type CursorPage,
   type PresignedDownload,
   type PresignedUpload,
   type Principal,
   type StorageKeyQuery,
+  type StoredFile,
+  type StoredFilePageQuery,
 } from '@repo/shared-types';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { CurrentPrincipal, Roles } from '../../../modules/auth/presentation/decorators.js';
@@ -59,6 +63,16 @@ export class StorageController {
   @Get('downloads')
   async download(@TenantId() tenantId: string, @Query(KeyPipe) { key }: StorageKeyQuery): Promise<PresignedDownload> {
     return toResponse(await withStorage(this.storage.presignDownload(tenantId, ownKey(tenantId, key))));
+  }
+
+  // Platform-bucket files only (the tracked ones); reads the database, so it works without credentials.
+  @Roles('TenantAdmin', 'User', 'Auditor')
+  @Get('objects')
+  list(
+    @TenantId() tenantId: string,
+    @Query(new ZodValidationPipe(StoredFilePageQuerySchema)) query: StoredFilePageQuery,
+  ): Promise<CursorPage<StoredFile>> {
+    return this.storage.list(tenantId, query);
   }
 
   // Frees platform quota. Only the uploader or a TenantAdmin. Files in a tenant's own bucket answer 404:

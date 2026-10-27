@@ -1,4 +1,4 @@
-import type { Role } from '@repo/shared-types';
+import type { CursorPage, Role, StoredFile, StoredFilePageQuery } from '@repo/shared-types';
 
 export const STORAGE_PROVIDER = Symbol('StorageProvider');
 
@@ -18,6 +18,8 @@ export interface StorageProvider {
   // Platform-bucket files only (freeing quota); a tenant's own bucket is managed with its own tools.
   // Only the uploader or a TenantAdmin (mayDeleteFile); anyone else gets StorageForbiddenError.
   delete(tenantId: string, key: string, caller: { id: string; role: Role }): Promise<void>;
+  // The tenant's platform-bucket files, newest first. A tenant's own bucket is not tracked, so not listed.
+  list(tenantId: string, query: StoredFilePageQuery): Promise<CursorPage<StoredFile>>;
 }
 
 // Neither the tenant nor the platform has usable storage credentials.

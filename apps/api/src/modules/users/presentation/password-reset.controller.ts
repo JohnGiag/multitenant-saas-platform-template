@@ -8,7 +8,7 @@ import {
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Public } from '../../auth/presentation/decorators.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
-import { loginAccountKey, passwordResetKey } from '../../rate-limit/domain/rate-limit-policy.js';
+import { loginAccountKey, loginEmailKey, passwordResetKey } from '../../rate-limit/domain/rate-limit-policy.js';
 import { clearAccountAttempts, countAccountAttempt } from '../../rate-limit/presentation/account-attempts.js';
 import { PASSWORD_RESET_SERVICE, type PasswordResetService } from '../domain/ports/password-reset.service.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
@@ -24,19 +24,20 @@ export class PasswordResetController {
   ) {}
 
   // Always 202, sent before any lookup or email: neither the answer nor its timing tells whether
-  // the account exists. Limited per account, so nobody can flood a user's inbox.
+  // the email has accounts. Limited per email, so nobody can flood an inbox.
   @Public()
   @Post()
   @HttpCode(202)
   async request(
-    @Body(new ZodValidationPipe(PasswordResetRequestSchema)) { tenantId, email }: PasswordResetRequestDto,
+    @Body(new ZodValidationPipe(PasswordResetRequestSchema)) { email }: PasswordResetRequestDto,
     @Res({ passthrough: true }) res: { setHeader(name: string, value: number): void },
   ): Promise<void> {
-    await countAccountAttempt(this.limiter, passwordResetKey(tenantId, email), res);
+    await countAccountAttempt(this.limiter, passwordResetKey(email), res);
     // shortcut: in-process, not queued (the token must not sit in Redis); a crash before sending loses
     // the email and the user simply asks again.
-    void this.resets.request(tenantId, email).catch((err: unknown) =>
-      this.logger.warn(`Password reset email for tenant ${tenantId} failed: ${err instanceof Error ? err.message : String(err)}`),
+    void this.resets.request(email).catch((err: unknown) =>
+      // Never the email itself (PII) in the log.
+      this.logger.warn(`Password reset email failed: ${err instanceof Error ? err.message : String(err)}`),
     );
   }
 
@@ -48,7 +49,8 @@ export class PasswordResetController {
   ): Promise<void> {
     const result = await this.resets.confirm(token, password);
     if (result === 'invalid') throw new BadRequestException('This reset link is invalid or has expired');
-    // A user locked out by failed logins can sign in again with the new password.
+    // A user locked out by failed logins can sign in again with the new password, either way.
     await clearAccountAttempts(this.limiter, loginAccountKey(result.tenantId, result.email));
+    await clearAccountAttempts(this.limiter, loginEmailKey(result.email));
   }
 }

@@ -8,3 +8,4 @@ export * from './capability.js';
 export * from './auth.js';
 export * from './notification.js';
 export * from './storage.js';
+export * from './audit.js';

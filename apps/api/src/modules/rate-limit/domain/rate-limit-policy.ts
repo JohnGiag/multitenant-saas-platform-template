@@ -37,14 +37,23 @@ export function planRateLimit(
   return { key: `rl:ip:${client.ip}:${method}:${client.route}`, limit: PUBLIC_LIMIT, windowMs: WINDOW_MS, failOpen: false };
 }
 
-// The email is hashed so Redis keys never hold PII.
+// Emails are hashed so Redis keys never hold PII.
+const hashEmail = (email: string) => createHash('sha256').update(email).digest('hex');
+
+// Sign-in with a tenantId (the second step after a TenantChoice, or a client that knows its tenant): per account.
 export function loginAccountKey(tenantId: string, email: string): string {
-  return `rl:login:${tenantId}:${createHash('sha256').update(email).digest('hex')}`;
+  return `rl:login:${tenantId}:${hashEmail(email)}`;
 }
 
-// Reset requests per account, so nobody can flood a user's inbox. Hashed like the login key.
-export function passwordResetKey(tenantId: string, email: string): string {
-  return `rl:reset:${tenantId}:${createHash('sha256').update(email).digest('hex')}`;
+// Sign-in by email alone tries every account with that email, so it is limited per email, whatever the tenant.
+// Counted before the lookup: a 429 tells nothing about whether the email has accounts.
+export function loginEmailKey(email: string): string {
+  return `rl:login-email:${hashEmail(email)}`;
+}
+
+// Reset requests per email (one request mails every account with it), so nobody can flood an inbox.
+export function passwordResetKey(email: string): string {
+  return `rl:reset:${hashEmail(email)}`;
 }
 
 // Guesses at the current password when changing it count like login attempts, per account.

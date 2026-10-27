@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { IdSchema, TimestampSchema } from './common.js';
+import { pageQuery } from './pagination.js';
 
 // Largest file one upload URL accepts: the size is signed into the URL, so the store refuses anything else.
 export const MAX_UPLOAD_BYTES = 1024 * 1024;
@@ -36,3 +38,19 @@ export const PresignedUploadSchema = PresignedDownloadSchema.extend({
   key: z.string(),
 });
 export type PresignedUpload = z.infer<typeof PresignedUploadSchema>;
+
+// A file in the platform bucket, newest first (GET /v1/storage/objects). Files in a tenant's own bucket are
+// not tracked, so they are not listed. `size` was reserved when the upload URL was issued, whether or not
+// the file was then sent.
+export const StoredFileSchema = z.object({
+  id: IdSchema,
+  key: z.string(),
+  filename: z.string(),
+  size: z.number().int(),
+  uploaderId: IdSchema,
+  createdAt: TimestampSchema,
+});
+export type StoredFile = z.infer<typeof StoredFileSchema>;
+
+export const StoredFilePageQuerySchema = pageQuery(IdSchema);
+export type StoredFilePageQuery = z.infer<typeof StoredFilePageQuerySchema>;

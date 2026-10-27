@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
 import { Pager } from '@/components/pager';
-import { RoleSelect } from '@/components/role-select';
+import { RoleSelect } from '@/components/choice-select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';

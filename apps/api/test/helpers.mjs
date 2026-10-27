@@ -53,6 +53,13 @@ export async function seedTenant(name, users = {}) {
   return id;
 }
 
+// One user, by default with a unique email: sign-in by email and password resets look across tenants, so
+// the shared admin@example.com-style addresses would collide with other test files running at the same time.
+export async function seedUser(tenantId, { email = `u-${crypto.randomUUID()}@example.com`, role = 'User', password } = {}) {
+  await db.user.create({ data: { tenantId, email, role, passwordHash: password ? await hash(password) : await passwordHash } });
+  return email;
+}
+
 // optionalModulesDir: install fixture optional modules instead of the real src/optional ones.
 export async function startApp({ optionalModulesDir } = {}) {
   const app = await createApp({ logger: false, optionalModulesDir });

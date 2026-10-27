@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import { EmailSchema, IdSchema, RoleSchema, TenantTierSchema, TimestampSchema } from './common.js';
 
-// Emails are unique per tenant, so sign-in names the tenant.
+// Email and password are enough: emails are unique per tenant, not globally, so when the password matches
+// accounts in several tenants the API answers with a TenantChoice and the client signs in again with
+// the chosen `tenantId`.
 export const SignInSchema = z.object({
-  tenantId: IdSchema,
   email: EmailSchema,
   password: z.string().min(1).max(256),
+  tenantId: IdSchema.optional(),
 });
 export type SignInDto = z.infer<typeof SignInSchema>;
 
@@ -14,6 +16,15 @@ export const AuthTokenSchema = z.object({
   expiresIn: z.number().int(),
 });
 export type AuthToken = z.infer<typeof AuthTokenSchema>;
+
+// Only tenants whose account accepted the password, so it reveals nothing to someone without it.
+export const TenantChoiceSchema = z.object({
+  tenants: z.array(z.object({ id: IdSchema, name: z.string() })).min(2),
+});
+export type TenantChoice = z.infer<typeof TenantChoiceSchema>;
+
+export const SignInResultSchema = z.union([AuthTokenSchema, TenantChoiceSchema]);
+export type SignInResult = z.infer<typeof SignInResultSchema>;
 
 // Who is making the request: a signed-in user or a headless client holding an API key.
 export const PrincipalSchema = z.object({

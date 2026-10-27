@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { Field } from '@/components/field';
-import { RoleSelect } from '@/components/role-select';
+import { RoleSelect } from '@/components/choice-select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

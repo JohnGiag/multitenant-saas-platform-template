@@ -4,12 +4,15 @@ import { SidebarNav } from '@/components/sidebar-nav';
 import { TenantSwitcher } from '@/components/tenant-switcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { api, getCurrentTenant, getPrincipal } from '@/lib/api';
+import { api, getCapabilities, getCurrentTenant, getPrincipal } from '@/lib/api';
 import { getTenantOverride } from '@/lib/session';
 import { signOut } from '../(auth)/actions';
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const me = await getPrincipal();
+  // Capability-gated links are tenant features, which SuperAdmin never gets; skipping the call also keeps the
+  // layout working if its selected tenant was deleted.
+  const features = me.role === 'SuperAdmin' ? [] : (await getCapabilities()).filter((c) => c.enabled).map((c) => c.key);
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
       <a
@@ -20,7 +23,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       </a>
       <aside className="border-b bg-sidebar text-sidebar-foreground md:w-60 md:shrink-0 md:border-r md:border-b-0">
         <p className="px-6 py-4 font-semibold">Admin</p>
-        <SidebarNav role={me.role} />
+        <SidebarNav role={me.role} features={features} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-3">
@@ -42,7 +45,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   );
 }
 
-// shortcut: lists the first 100 tenants only; switch to a searchable combobox over the cursor pages beyond that.
+// shortcut: lists the first 100 tenants only; the Tenants page pages through all of them and can open any.
 async function SuperAdminTenants({ ownTenantId }: { ownTenantId: string }) {
   const [{ items }, selected] = await Promise.all([api<CursorPage<Tenant>>('/tenants?limit=100', { ownTenant: true }), getTenantOverride()]);
   return <TenantSwitcher tenants={items.map(({ id, name }) => ({ id, name }))} current={selected ?? ownTenantId} ownTenantId={ownTenantId} />;

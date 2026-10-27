@@ -6,6 +6,8 @@ import { applyTrustProxy } from '../dist/common/trust-proxy.js';
 import { parseSentinels } from '../dist/infrastructure/redis/sentinels.js';
 import {
   loginAccountKey,
+  loginEmailKey,
+  passwordResetKey,
   PUBLIC_LIMIT,
   planRateLimit,
   TIER_LIMITS,
@@ -44,6 +46,13 @@ test('login account key is per tenant and email, and never holds the email itsel
   assert.notEqual(key, loginAccountKey('t2', 'ada@example.com'));
   assert.notEqual(key, loginAccountKey('t1', 'bob@example.com'));
   assert.match(key, /^rl:login:t1:[0-9a-f]{64}$/);
+});
+
+test('email-only login and reset keys are per email across tenants, and never hold the email itself', () => {
+  assert.equal(loginEmailKey('ada@example.com'), loginEmailKey('ada@example.com'));
+  assert.notEqual(loginEmailKey('ada@example.com'), loginEmailKey('bob@example.com'));
+  assert.match(loginEmailKey('ada@example.com'), /^rl:login-email:[0-9a-f]{64}$/);
+  assert.match(passwordResetKey('ada@example.com'), /^rl:reset:[0-9a-f]{64}$/);
 });
 
 const encode = (tuple) => Buffer.from(JSON.stringify(tuple)).toString('base64url');

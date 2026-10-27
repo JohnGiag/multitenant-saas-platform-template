@@ -66,6 +66,8 @@ model User {
   @@unique([tenantId, clerkUserId])
   // user.updated / user.deleted webhooks address a Clerk user across all their tenants.
   @@index([clerkUserId])
+  // Sign-in and password reset find an email's accounts before any tenant is known (MAX_ACCOUNTS_PER_EMAIL).
+  @@index([email])
   // UUIDv7 ids are time-ordered, so (tenant_id, id) also serves keyset pagination.
   @@index([tenantId, id])
   @@map("users")

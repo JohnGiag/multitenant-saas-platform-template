@@ -220,3 +220,31 @@ test('deleting a tenant deletes its files from the platform bucket', async () =>
   for (const key of keys) assert.ok(deleted.includes(key), `${key} left in the bucket`);
   assert.equal(await db.storageObject.count({ where: { tenantId: doomed } }), 0);
 });
+
+test("listing shows the tenant's platform files newest first, page by page, and never another tenant's", async () => {
+  tenants.list = await seedTenant('storage-e2e-list', { admin: 'TenantAdmin', auditor: 'Auditor' });
+  const adminToken = await login(tenants.list, 'admin@example.com');
+  const keys = [];
+  for (const name of ['first.txt', 'second.txt', 'third.txt']) keys.push((await (await upload(adminToken, name, 5)).json()).key);
+  const otherTenantKey = await seedFileOfB(1);
+
+  const list = async (token, query = '') => {
+    const res = await call('GET', `/storage/objects${query}`, { token });
+    assert.equal(res.status, 200);
+    return res.json();
+  };
+  const page1 = await list(adminToken, '?limit=2');
+  assert.deepEqual(page1.items.map((f) => f.filename), ['third.txt', 'second.txt']);
+  assert.equal(page1.items[0].size, 5);
+  const page2 = await list(adminToken, `?limit=2&cursor=${page1.nextCursor}`);
+  assert.deepEqual(page2.items.map((f) => f.key), [keys[0]]);
+  assert.equal(page2.nextCursor, null);
+
+  // Read-only roles may list; tenant B sees only its own; SuperAdmin stays out of tenant files.
+  assert.equal((await list(await login(tenants.list, 'auditor@example.com'))).items.length, 3);
+  const ofB = (await list(tokens.userB, '?limit=100')).items.map((f) => f.key);
+  assert.ok(ofB.includes(otherTenantKey));
+  assert.ok(!keys.some((k) => ofB.includes(k)));
+  assert.equal((await call('GET', '/storage/objects', { token: tokens.super, tenant: tenants.list })).status, 403);
+  assert.equal((await call('GET', '/storage/objects?cursor=not-an-id', { token: adminToken })).status, 400);
+});

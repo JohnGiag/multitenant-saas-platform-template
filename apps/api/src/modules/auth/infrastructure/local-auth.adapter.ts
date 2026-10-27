@@ -6,10 +6,12 @@ import {
   type AuthToken,
   type Principal,
   type SignInDto,
+  type TenantChoice,
 } from '@repo/shared-types';
 import { jwtVerify, SignJWT } from 'jose';
 import { z } from 'zod';
 import type { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
+import { MAX_ACCOUNTS_PER_EMAIL } from '../domain/account-lookup.js';
 import type { AuthService } from '../domain/ports/auth.port.js';
 import { hashPassword, verifyPassword } from './password.js';
 
@@ -32,14 +34,26 @@ export class LocalAuthAdapter implements AuthService {
     this.key = new TextEncoder().encode(jwtSecret);
   }
 
-  async signIn({ tenantId, email, password }: SignInDto): Promise<AuthToken | null> {
-    const user = await this.prisma.user.findUnique({
-      where: { tenantId_email: { tenantId, email } },
-      select: { id: true, tenantId: true, role: true, passwordHash: true, tenant: { select: { tier: true } } },
+  async signIn({ tenantId, email, password }: SignInDto): Promise<AuthToken | TenantChoice | null> {
+    // Without a tenantId this looks across tenants (see MAX_ACCOUNTS_PER_EMAIL). Accounts that sign in
+    // through an external provider have no password and are skipped.
+    const accounts = await this.prisma.user.findMany({
+      where: { email, passwordHash: { not: null }, ...(tenantId && { tenantId }) },
+      orderBy: { id: 'asc' },
+      take: MAX_ACCOUNTS_PER_EMAIL,
+      select: { id: true, tenantId: true, role: true, passwordHash: true, tenant: { select: { name: true, tier: true } } },
     });
-    const passwordOk = await verifyPassword(user?.passwordHash ?? (await this.dummyHash), password);
-    if (!user?.passwordHash || !passwordOk) return null;
+    if (accounts.length === 0) {
+      await verifyPassword(await this.dummyHash, password);
+      return null;
+    }
+    // In parallel, so the time barely depends on how many accounts the email has.
+    const checks = await Promise.all(accounts.map((a) => verifyPassword(a.passwordHash!, password)));
+    const matched = accounts.filter((_, i) => checks[i]);
+    if (matched.length === 0) return null;
+    if (matched.length > 1) return { tenants: matched.map((a) => ({ id: a.tenantId, name: a.tenant.name })) };
 
+    const [user] = matched as [(typeof matched)[number]];
     const accessToken = await new SignJWT({ tid: user.tenantId, role: user.role, tier: user.tenant.tier })
       .setProtectedHeader({ alg: 'HS256' })
       .setSubject(user.id)
