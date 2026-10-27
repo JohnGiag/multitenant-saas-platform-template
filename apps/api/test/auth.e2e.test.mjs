@@ -1,66 +1,23 @@
-// Needs the docker-compose database and apps/api/.env (see .env.example).
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
-import { hash } from '@node-rs/argon2';
-import { NestFactory } from '@nestjs/core';
-import { PrismaPg } from '@prisma/adapter-pg';
 import { SignJWT } from 'jose';
-import { AppModule } from '../dist/app.module.js';
-import { PrismaClient } from '../dist/generated/prisma/client.js';
+import { cleanup, db, seedTenant, startApp } from './helpers.mjs';
 
-if (existsSync('.env')) process.loadEnvFile();
-
-const PASSWORD = 'correct horse battery staple';
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 const tenants = {};
-let app;
-let base;
+let app, base, call, login;
 
 before(async () => {
-  const passwordHash = await hash(PASSWORD);
-  assert.match(passwordHash, /^\$argon2id\$/);
   for (const name of ['a', 'b']) {
-    const { id } = await db.tenant.create({ data: { name: `auth-e2e-${name}` } });
-    tenants[name] = id;
-    await db.user.createMany({
-      data: [
-        { tenantId: id, email: 'admin@example.com', passwordHash, role: 'TenantAdmin' },
-        { tenantId: id, email: 'user@example.com', passwordHash, role: 'User' },
-      ],
-    });
+    tenants[name] = await seedTenant(`auth-e2e-${name}`, { admin: 'TenantAdmin', user: 'User' });
   }
-  await db.user.create({ data: { tenantId: tenants.a, email: 'only-a@example.com', passwordHash } });
-
-  app = await NestFactory.create(AppModule, { logger: false });
-  app.setGlobalPrefix('v1');
-  await app.listen(0);
-  base = `http://127.0.0.1:${app.getHttpServer().address().port}/v1`;
+  await db.user.create({ data: { tenantId: tenants.a, email: 'only-a@example.com' } });
+  ({ app, base, call, login } = await startApp());
 });
 
-after(async () => {
-  await app?.close();
-  const tenantId = { in: Object.values(tenants) };
-  await db.apiKey.deleteMany({ where: { tenantId } });
-  await db.user.deleteMany({ where: { tenantId } });
-  await db.tenant.deleteMany({ where: { id: tenantId } });
-  await db.$disconnect();
-});
-
-function call(method, path, { token, apiKey, body } = {}) {
-  const headers = { 'content-type': 'application/json' };
-  if (token) headers.authorization = `Bearer ${token}`;
-  if (apiKey) headers['x-api-key'] = apiKey;
-  return fetch(base + path, { method, headers, body: body && JSON.stringify(body) });
-}
-
-async function login(tenant, email, password = PASSWORD) {
-  const res = await call('POST', '/auth/login', { body: { tenantId: tenants[tenant], email, password } });
-  return res.ok ? (await res.json()).accessToken : res.status;
-}
+after(() => cleanup(app, Object.values(tenants)));
 
 test('login issues a token whose principal comes from the server', async () => {
-  const token = await login('a', 'ADMIN@example.com');
+  const token = await login(tenants.a, 'ADMIN@example.com');
   assert.equal(typeof token, 'string');
   const res = await call('GET', '/auth/me', { token });
   assert.equal(res.status, 200);
@@ -75,9 +32,11 @@ test('login issues a token whose principal comes from the server', async () => {
 });
 
 test('login rejects wrong password, unknown email, other tenant and bad input', async () => {
-  assert.equal(await login('a', 'admin@example.com', 'wrong password'), 401);
-  assert.equal(await login('a', 'nobody@example.com'), 401);
-  assert.equal(await login('b', 'only-a@example.com'), 401);
+  assert.equal(await login(tenants.a, 'admin@example.com', 'wrong password'), 401);
+  assert.equal(await login(tenants.a, 'nobody@example.com'), 401);
+  assert.equal(await login(tenants.b, 'only-a@example.com'), 401);
+  // A user without a password (external provider) cannot log in locally.
+  assert.equal(await login(tenants.a, 'only-a@example.com'), 401);
   const res = await call('POST', '/auth/login', { body: { tenantId: 'not-a-uuid', email: 'x' } });
   assert.equal(res.status, 400);
 });
@@ -95,9 +54,9 @@ test('protected routes reject missing, garbage and forged tokens', async () => {
 });
 
 test('API keys: role-gated, tenant-isolated, revocable', async () => {
-  const adminA = await login('a', 'admin@example.com');
-  const adminB = await login('b', 'admin@example.com');
-  const userA = await login('a', 'user@example.com');
+  const adminA = await login(tenants.a, 'admin@example.com');
+  const adminB = await login(tenants.b, 'admin@example.com');
+  const userA = await login(tenants.a, 'user@example.com');
 
   assert.equal((await call('POST', '/api-keys', { token: userA, body: { name: 'x' } })).status, 403);
   const superKey = await call('POST', '/api-keys', { token: adminA, body: { name: 'x', role: 'SuperAdmin' } });

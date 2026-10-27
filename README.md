@@ -15,11 +15,14 @@ docker compose up -d --wait
 cp apps/api/.env.example apps/api/.env
 ```
 
-Set `JWT_SECRET` in `apps/api/.env` to at least 32 random characters:
+In `apps/api/.env`, set `JWT_SECRET` (at least 32 characters) and `BYOK_MASTER_KEY` (32 bytes, base64):
 
 ```sh
-node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"  # JWT_SECRET
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"     # BYOK_MASTER_KEY
 ```
+
+Keep `BYOK_MASTER_KEY` safe: without it, stored tenant secrets cannot be decrypted.
 
 Then apply the database migrations:
 
@@ -43,3 +46,10 @@ pnpm --filter @repo/api db:deploy
 - Headless clients send `X-API-Key: <key>`. A `TenantAdmin` creates keys with `POST /v1/api-keys` (the key is shown once) and revokes them with `DELETE /v1/api-keys/:id`.
 - `AUTH_PROVIDER=local|clerk` picks the identity provider. The Clerk adapter is still a stub that rejects every token.
 - There is no sign-up endpoint yet: insert the first user directly in the database, with an Argon2id `password_hash`.
+
+## Tenants and integrations
+
+- Every request acts on the caller's own tenant. A `SuperAdmin` may act on another tenant by sending `X-Tenant-Id: <tenantId>`; anyone else sending a different id gets `403`.
+- `GET /v1/tenants/current` reads the current tenant; `PATCH /v1/tenants/current` renames it (`TenantAdmin`).
+- `SuperAdmin` only: `POST /v1/tenants`, `GET /v1/tenants?cursor=&limit=`, `PATCH /v1/tenants/:id` (name, tier), `DELETE /v1/tenants/:id` (refused with `409` while the tenant still has data).
+- BYOK secrets: `PUT /v1/integrations/:provider` with `{ config, enabled? }` stores a provider's config encrypted with AES-256-GCM; `GET /v1/integrations` lists them with masked values only; `DELETE /v1/integrations/:provider` removes them. Secrets are never returned by the API.

@@ -9,10 +9,11 @@ import {
   ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
-import { CreateApiKeySchema, type CreateApiKeyDto, type CreatedApiKey, type Principal } from '@repo/shared-types';
+import { CreateApiKeySchema, type CreateApiKeyDto, type CreatedApiKey } from '@repo/shared-types';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
+import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { API_KEY_SERVICE, type ApiKeyService } from '../domain/ports/api-key.port.js';
-import { CurrentPrincipal, Roles } from './decorators.js';
+import { Roles } from './decorators.js';
 
 @Controller('api-keys')
 @Roles('TenantAdmin')
@@ -21,15 +22,15 @@ export class ApiKeysController {
 
   @Post()
   create(
-    @CurrentPrincipal() principal: Principal,
+    @TenantId() tenantId: string,
     @Body(new ZodValidationPipe(CreateApiKeySchema)) body: CreateApiKeyDto,
   ): Promise<CreatedApiKey> {
-    return this.apiKeys.create(principal.tenantId, body);
+    return this.apiKeys.create(tenantId, body);
   }
 
   @Delete(':id')
   @HttpCode(204)
-  async revoke(@CurrentPrincipal() principal: Principal, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    if (!(await this.apiKeys.revoke(principal.tenantId, id))) throw new NotFoundException();
+  async revoke(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    if (!(await this.apiKeys.revoke(tenantId, id))) throw new NotFoundException();
   }
 }

@@ -53,6 +53,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - Every tenant-owned table has a non-null `tenant_id` column, and **every query filters by it**. No exceptions, including background jobs, admin tooling and raw SQL.
 - **Composite indexes on tenant-owned tables start with `tenant_id`** as the leftmost column (e.g. `@@index([tenantId, createdAt, id])`).
 - Tenant context is resolved once per request (auth token or API key) and passed explicitly or via request-scoped context. Never trust a `tenantId` from a request body.
+- Handlers get the tenant from `@TenantId()`, never from `principal.tenantId`. It honours a SuperAdmin's `X-Tenant-Id` and throws instead of yielding `undefined` (Prisma drops `undefined` filters).
 - Only `SuperAdmin` may operate across tenants, and only through explicit, audited code paths.
 - Every new tenant-scoped repository needs a test proving that tenant A cannot read or write tenant B's data.
 

@@ -62,8 +62,10 @@ model TenantIntegration {
   tenantId        String   @map("tenant_id") @db.Uuid
   // Free-form so optional modules can add providers without a migration.
   provider        String
-  // AES-256-GCM: iv + auth tag + ciphertext.
+  // AES-256-GCM: version byte + 96-bit IV + auth tag + ciphertext, bound to tenant/provider.
   encryptedConfig Bytes    @map("encrypted_config")
+  // Written alongside the ciphertext so listing never needs to decrypt.
+  maskedConfig    Json     @map("masked_config")
   enabled         Boolean  @default(true)
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)

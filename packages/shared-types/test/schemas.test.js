@@ -1,6 +1,35 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CreateTenantSchema, CreateUserSchema, IntegrationProviderSchema, UserSchema } from '../dist/index.js';
+import {
+  AdminUpdateTenantSchema,
+  CreateTenantSchema,
+  CreateUserSchema,
+  IntegrationProviderSchema,
+  TenantPageQuerySchema,
+  UpdateTenantSchema,
+  UpsertTenantIntegrationSchema,
+  UserSchema,
+} from '../dist/index.js';
+
+test('tenants cannot change their own tier', () => {
+  assert.equal('tier' in UpdateTenantSchema.parse({ name: 'Acme', tier: 'enterprise' }), false);
+  assert.equal(AdminUpdateTenantSchema.safeParse({}).success, false);
+  assert.deepEqual(AdminUpdateTenantSchema.parse({ tier: 'pro' }), { tier: 'pro' });
+});
+
+test('page query coerces limit from the query string and bounds it', () => {
+  assert.deepEqual(TenantPageQuerySchema.parse({}), { limit: 20 });
+  assert.equal(TenantPageQuerySchema.parse({ limit: '5' }).limit, 5);
+  for (const limit of ['0', '101', '2.5', 'abc']) {
+    assert.equal(TenantPageQuerySchema.safeParse({ limit }).success, false, limit);
+  }
+  assert.equal(TenantPageQuerySchema.safeParse({ cursor: 'not-a-uuid' }).success, false);
+});
+
+test('integration config must not be empty', () => {
+  assert.equal(UpsertTenantIntegrationSchema.safeParse({ config: {} }).success, false);
+  assert.equal(UpsertTenantIntegrationSchema.safeParse({ config: { apiKey: 'x' } }).success, true);
+});
 
 test('CreateTenant drops a caller-chosen tier', () => {
   assert.equal('tier' in CreateTenantSchema.parse({ name: 'Acme', tier: 'enterprise' }), false);

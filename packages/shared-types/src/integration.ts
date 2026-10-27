@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IdSchema, TimestampSchema } from './common.js';
+import { pageQuery } from './pagination.js';
 
 // Free-form key (e.g. "resend", "r2") so optional modules add providers without touching this package.
 export const IntegrationProviderSchema = z.string().regex(/^[a-z0-9-]{1,64}$/);
@@ -16,9 +17,14 @@ export const TenantIntegrationSchema = z.object({
 });
 export type TenantIntegration = z.infer<typeof TenantIntegrationSchema>;
 
+// The provider comes from the URL; this is the body that replaces its config.
 export const UpsertTenantIntegrationSchema = z.object({
-  provider: IntegrationProviderSchema,
-  config: z.record(z.string().min(1).max(64), z.string().max(16_384)),
+  config: z
+    .record(z.string().min(1).max(64), z.string().max(16_384))
+    .refine((c) => Object.keys(c).length > 0, 'Config must not be empty'),
   enabled: z.boolean().optional(),
 });
 export type UpsertTenantIntegrationDto = z.infer<typeof UpsertTenantIntegrationSchema>;
+
+export const IntegrationPageQuerySchema = pageQuery(IntegrationProviderSchema);
+export type IntegrationPageQuery = z.infer<typeof IntegrationPageQuerySchema>;
