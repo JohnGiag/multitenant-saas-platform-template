@@ -34,6 +34,7 @@ model Tenant {
 
   users        User[]
   integrations TenantIntegration[]
+  apiKeys      ApiKey[]
 
   @@map("tenants")
 }
@@ -72,4 +73,23 @@ model TenantIntegration {
   // Also serves "all integrations of a tenant"; at most one row per provider, so no paging index.
   @@unique([tenantId, provider])
   @@map("tenant_integrations")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  name       String
+  // Public part of the key: looked up before the tenant is known, hence globally unique.
+  prefix     String    @unique
+  // SHA-256 of the secret part; the secret is random, so a slow hash adds nothing.
+  secretHash Bytes     @map("secret_hash")
+  role       Role      @default(User)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, id])
+  @@map("api_keys")
 }
