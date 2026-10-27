@@ -60,9 +60,19 @@ Every route is rate limited with a Redis sliding window over the last 60 seconds
 
 Behind a load balancer, set `TRUST_PROXY_HOPS` to the number of proxies so the real client IP is used. For Redis high availability, set `REDIS_SENTINELS` and `REDIS_SENTINEL_NAME` instead of `REDIS_URL` (see `.env.example`).
 
+## Notifications and background jobs
+
+- `POST /v1/notifications` (`TenantAdmin`) with `{ userId, title, body, data? }` sends to a user of the current tenant and answers `202` with `{ queued, realtime }`.
+- **Real-time:** `GET /v1/notifications/stream` is a Server-Sent Events stream of the caller's own notifications. Events are fanned out through Redis Pub/Sub, so it works with any number of API instances. Browsers' `EventSource` cannot send an `Authorization` header: use a fetch-based SSE client. A user may hold 5 open streams per instance; opening a 6th closes the oldest with a final `closed` event, after which the client should not reconnect.
+- **Email** (optional module `email`, configure `PUT /v1/integrations/resend` with `{ apiKey, from }`) and **push** (optional module `push`, configure `PUT /v1/integrations/fcm` with `{ serviceAccount: "<service account JSON>" }`; devices register with `POST /v1/push/devices` and `DELETE /v1/push/devices/:token`) are delivered by a BullMQ worker, one job per channel. The worker loads the tenant's secrets when the job runs; payloads never contain them.
+- A channel whose module is deleted, or that the tenant has not configured or has disabled, is skipped, not failed.
+- Failures are retried with exponential backoff (`JOB_ATTEMPTS`, `JOB_BACKOFF_MS`); errors that a retry cannot fix (rejected credentials, unverified sender) skip the retries. Jobs that still fail are copied to the `notifications-dlq` queue with their payload, error and every attempt's stack trace, and stay there for inspection and replay.
+- Every API instance also runs a worker (`WORKER_CONCURRENCY` jobs at a time).
+
 ## Tenants and integrations
 
 - Every request acts on the caller's own tenant. A `SuperAdmin` may act on another tenant by sending `X-Tenant-Id: <tenantId>`; anyone else sending a different id gets `403`.
+- A `SuperAdmin` manages tenants (and, once built, their users) only. Integrations (BYOK secrets) and notifications belong to each tenant's own `TenantAdmin`; a `SuperAdmin` gets `403` there, with or without `X-Tenant-Id`.
 - `GET /v1/tenants/current` reads the current tenant; `PATCH /v1/tenants/current` renames it (`TenantAdmin`).
 - `SuperAdmin` only: `POST /v1/tenants`, `GET /v1/tenants?cursor=&limit=`, `PATCH /v1/tenants/:id` (name, tier), `DELETE /v1/tenants/:id` (refused with `409` while the tenant still has data).
 - `GET /v1/system/capabilities` lists the installed optional modules (`apps/api/src/optional/<key>/`) and whether each is enabled for the current tenant. Delete a module's folder to uninstall it; nothing else needs to change.

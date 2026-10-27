@@ -64,14 +64,19 @@ test('integrations are isolated per tenant', async () => {
   await assert.rejects(secrets.getSecrets(tenants.b, 'resend'));
 });
 
-test('roles: admins write, auditors read, users see nothing; SuperAdmin via X-Tenant-Id', async () => {
+test('roles: admins write, auditors read, users see nothing, SuperAdmin stays out', async () => {
+  assert.equal((await call('GET', '/integrations', { token: tokens.adminA })).status, 200);
   assert.equal((await call('GET', '/integrations', { token: tokens.userA })).status, 403);
   assert.equal((await put(tokens.userA, 'r2', { config: { k: 'v' } })).status, 403);
   assert.equal((await call('GET', '/integrations', { token: tokens.auditorA })).status, 200);
   assert.equal((await put(tokens.auditorA, 'r2', { config: { k: 'v' } })).status, 403);
 
-  const viaSuper = await call('GET', '/integrations', { token: tokens.super, tenant: tenants.a });
-  assert.deepEqual((await viaSuper.json()).items.map((i) => i.provider), ['resend']);
+  // SuperAdmin manages tenants and their users, not their secrets: not even through X-Tenant-Id.
+  const asSuper = { token: tokens.super, tenant: tenants.a };
+  assert.equal((await call('GET', '/integrations', asSuper)).status, 403);
+  assert.equal((await call('PUT', '/integrations/r2', { ...asSuper, body: { config: { k: 'v' } } })).status, 403);
+  assert.equal((await call('DELETE', '/integrations/resend', asSuper)).status, 403);
+  assert.ok(await secrets.getSecrets(tenants.a, 'resend'), 'still configured');
 });
 
 test('list pages by provider', async () => {

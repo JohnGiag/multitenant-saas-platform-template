@@ -58,6 +58,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - Tenant context is resolved once per request (auth token or API key) and passed explicitly or via request-scoped context. Never trust a `tenantId` from a request body.
 - Handlers get the tenant from `@TenantId()`, never from `principal.tenantId`. It honours a SuperAdmin's `X-Tenant-Id` and throws instead of yielding `undefined` (Prisma drops `undefined` filters).
 - Only `SuperAdmin` may operate across tenants, and only through explicit, audited code paths.
+- **`SuperAdmin` manages tenants and their users, nothing inside them.** It never gets a tenant's integrations (BYOK secrets), messaging or other business data, not even via `X-Tenant-Id`: leave `SuperAdmin` out of `@Roles` on such routes. Its own account routes (`/auth/me`, its own stream and devices) are fine.
 - Every new tenant-scoped repository needs a test proving that tenant A cannot read or write tenant B's data.
 
 ## Auth & security
@@ -84,8 +85,8 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 
 ## Infrastructure & performance
 
-- **Rate limiting:** Redis sliding window, keyed by tenant + user (or API key) + tier. Return `429` with a `Retry-After` header. Implemented as a global interceptor (`modules/rate-limit`), so every route is covered without opting in: authenticated callers get their tier's limit and fail open when Redis is down; public routes are limited per client IP and route and fail closed. Login is also limited per account (tenant + hashed email) across IPs; a successful login resets that counter. Limits live in `rate-limit-policy.ts`.
-- **Background jobs:** heavy work (emails, webhooks, processing) runs on BullMQ workers. Every job payload carries `tenantId`, and the worker loads that tenant's secrets when it runs (no secrets in job payloads). Use retries with backoff, and send jobs that run out of attempts to a **dead-letter queue**.
+- **Rate limiting:** Redis sliding window, keyed by tenant + user (or API key) + tier. Return `429` with a `Retry-After` header. Implemented as a global guard (`modules/rate-limit`); `AppModule` registers the guard chain in order `AuthGuard` → `RateLimitGuard` → `TenantContextGuard`, so every route is covered without opting in: authenticated callers get their tier's limit and fail open when Redis is down; public routes are limited per client IP and route and fail closed. Login is also limited per account (tenant + hashed email) across IPs; a successful login resets that counter. Limits live in `rate-limit-policy.ts`.
+- **Background jobs:** heavy work (emails, webhooks, processing) runs on BullMQ workers. Every job payload carries `tenantId`, and the worker loads that tenant's secrets when it runs (no secrets in job payloads). Use retries with backoff, and send jobs that run out of attempts to a **dead-letter queue**. New queues use `JobsModule.registerQueue(name)` (shared retry policy + `<name>-dlq`) and a worker extending `DeadLetteringWorker` (`modules/jobs`), which handles dead-lettering, the startup sweep and shutdown during a Redis outage.
 - **Pagination:** every list endpoint uses **keyset (cursor) pagination** over a stable order (e.g. `(created_at, id)`), backed by an index that starts with `tenant_id`. Never use `OFFSET`. Use `common/keyset.ts` (`keysetArgs` + `keysetPage`, cursor validated by `keysetCursorSchema(<sort field's Zod type>)`, e.g. `z.iso.datetime()` for `created_at`) with an index on `(tenant_id, <field>, id)`; a unique sort key can use `toCursorPage` directly. `apps/api/test/pagination.e2e.test.mjs` shows how to prove the index is used with `EXPLAIN`.
 
 ## Notifications
@@ -93,6 +94,9 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - A multi-channel dispatcher with these channels: **SSE** (real-time web updates), **FCM** (push), **Resend** (transactional email).
 - Each channel is a pluggable adapter. If a channel's module is missing or the tenant hasn't configured it, the dispatcher skips that channel without errors and logs at debug level.
 - Delivery runs through BullMQ, except SSE fan-out.
+- **Checks that reject a request belong in guards, not interceptors or handlers that run after an `await`.** Nest runs interceptors lazily; on an SSE route that is after the stream has started, so a late 403/429 becomes a 200 with an `error` event.
+- **Adding a channel:** an optional module provides a class implementing `NotificationChannel` (`modules/notifications/domain/notification-channel.ts`) that registers itself in `NotificationChannelRegistry` in `onModuleInit`. Throw `PermanentDeliveryError` for failures a retry cannot fix; any other error is retried. Use `deliveryId` as the provider's idempotency key where one exists.
+- SSE goes through Redis Pub/Sub (`SseHub`) so events reach users connected to any instance.
 
 ## Frontend (`apps/web`)
 

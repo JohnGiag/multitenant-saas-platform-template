@@ -35,6 +35,7 @@ model Tenant {
   users        User[]
   integrations TenantIntegration[]
   apiKeys      ApiKey[]
+  pushDevices  PushDevice[]
 
   @@map("tenants")
 }
@@ -49,7 +50,8 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  pushDevices PushDevice[]
 
   @@unique([tenantId, email])
   // UUIDv7 ids are time-ordered, so (tenant_id, id) also serves keyset pagination.
@@ -95,4 +97,21 @@ model ApiKey {
   // Keyset pagination newest-first over (created_at, id) within a tenant.
   @@index([tenantId, createdAt, id])
   @@map("api_keys")
+}
+
+// FCM registration tokens, used by the optional push module (src/optional/push).
+model PushDevice {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  // One device belongs to whoever registered it last.
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@map("push_devices")
 }

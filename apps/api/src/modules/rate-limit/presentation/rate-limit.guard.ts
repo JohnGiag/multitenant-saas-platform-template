@@ -5,11 +5,9 @@ import {
   Injectable,
   Logger,
   ServiceUnavailableException,
-  type CallHandler,
+  type CanActivate,
   type ExecutionContext,
-  type NestInterceptor,
 } from '@nestjs/common';
-import type { Observable } from 'rxjs';
 import type { AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { RATE_LIMITER, type RateLimiter, type RateLimitResult } from '../domain/ports/rate-limiter.port.js';
 import { planRateLimit } from '../domain/rate-limit-policy.js';
@@ -20,15 +18,16 @@ interface RateLimitedRequest extends AuthenticatedRequest {
   route?: { path?: string };
 }
 
-// Global. An interceptor rather than a guard because interceptors always run after every guard,
-// so the principal set by AuthGuard is known here regardless of guard registration order.
+// Global, registered right after AuthGuard (see AppModule), so the principal is known.
+// A guard, not an interceptor: Nest runs interceptors lazily, and on an SSE route that is after the
+// stream has started, too late to answer 429 or set headers.
 @Injectable()
-export class RateLimitInterceptor implements NestInterceptor {
+export class RateLimitGuard implements CanActivate {
   private readonly logger = new Logger('RateLimit');
 
   constructor(@Inject(RATE_LIMITER) private readonly limiter: RateLimiter) {}
 
-  async intercept(ctx: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const http = ctx.switchToHttp();
     const req = http.getRequest<RateLimitedRequest>();
     const res = http.getResponse<{ setHeader(name: string, value: number): void }>();
@@ -47,7 +46,7 @@ export class RateLimitInterceptor implements NestInterceptor {
       this.logger.error(
         `Rate limit check failed for ${plan.key}, failing ${plan.failOpen ? 'open' : 'closed'}: ${err instanceof Error ? err.message : String(err)}`,
       );
-      if (plan.failOpen) return next.handle();
+      if (plan.failOpen) return true;
       throw new ServiceUnavailableException();
     }
 
@@ -58,6 +57,6 @@ export class RateLimitInterceptor implements NestInterceptor {
       res.setHeader('Retry-After', result.resetSec);
       throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
     }
-    return next.handle();
+    return true;
   }
 }

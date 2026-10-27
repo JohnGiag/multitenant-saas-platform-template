@@ -17,15 +17,16 @@ import { INTEGRATION_SERVICE, type IntegrationService } from '../domain/ports/in
 const ProviderPipe = new ZodValidationPipe(IntegrationProviderSchema);
 
 // Responses only ever carry masked config; secrets are write-only through this API.
+// A tenant's own admins only: SuperAdmin manages tenants and their users, not their secrets.
 @Controller('integrations')
-@Roles('SuperAdmin', 'TenantAdmin')
+@Roles('TenantAdmin')
 export class IntegrationsController {
   constructor(
     @Inject(INTEGRATION_SERVICE) private readonly integrations: IntegrationService,
     @Inject(OPTIONAL_MODULES) private readonly modules: OptionalModule[],
   ) {}
 
-  @Roles('SuperAdmin', 'TenantAdmin', 'Auditor')
+  @Roles('TenantAdmin', 'Auditor')
   @Get()
   list(
     @TenantId() tenantId: string,

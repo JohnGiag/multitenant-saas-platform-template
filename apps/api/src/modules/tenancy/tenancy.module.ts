@@ -1,15 +1,13 @@
 import { Module } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
 import { TENANT_REPOSITORY } from './domain/ports/tenant.repository.js';
 import { PrismaTenantRepository } from './infrastructure/prisma-tenant.repository.js';
-import { TenantContextInterceptor } from './presentation/tenant-context.js';
+import { TenantContextGuard } from './presentation/tenant-context.js';
 import { TenantsController } from './presentation/tenants.controller.js';
 
+// TenantContextGuard is registered globally by AppModule, after AuthGuard and RateLimitGuard.
 @Module({
   controllers: [TenantsController],
-  providers: [
-    { provide: TENANT_REPOSITORY, useClass: PrismaTenantRepository },
-    { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
-  ],
+  providers: [{ provide: TENANT_REPOSITORY, useClass: PrismaTenantRepository }, TenantContextGuard],
+  exports: [TenantContextGuard],
 })
 export class TenancyModule {}

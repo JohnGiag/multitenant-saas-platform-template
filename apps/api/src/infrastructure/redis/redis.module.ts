@@ -1,14 +1,14 @@
 import { Global, Inject, Logger, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis, type RedisOptions } from 'ioredis';
-import { parseSentinels } from './sentinels.js';
+import { redisConnection } from './redis-connection.js';
 
 export const REDIS_CLIENT = Symbol('RedisClient');
 
 const logger = new Logger('Redis');
 
-// Ported from nestjs-redis-rate-limiter. Tuned for request-path use (fail fast); BullMQ workers
-// will need their own connection with maxRetriesPerRequest: null.
+// Ported from nestjs-redis-rate-limiter. Tuned for request-path use (fail fast); BullMQ opens its
+// own connections (JobsModule) because workers need the opposite: wait out an outage.
 @Global()
 @Module({
   providers: [
@@ -26,18 +26,11 @@ const logger = new Logger('Redis');
           // Connect on the first command: startup never waits on Redis, and an app that fails to boot holds no socket.
           lazyConnect: true,
         };
-        // Sentinel mode follows the primary across failovers; otherwise connect to a single Redis.
-        const sentinels = config.get<string>('REDIS_SENTINELS');
-        const redis = sentinels
-          ? new Redis({
-              ...options,
-              sentinels: parseSentinels(sentinels),
-              name: config.getOrThrow<string>('REDIS_SENTINEL_NAME'),
-              // REDIS_URL (and the password in it) is unused here, so auth comes from its own variable.
-              password: config.get<string>('REDIS_PASSWORD'),
-              sentinelPassword: config.get<string>('REDIS_PASSWORD'),
-            })
-          : new Redis(config.getOrThrow<string>('REDIS_URL'), options);
+        const connection = redisConnection(config);
+        const redis =
+          'url' in connection
+            ? new Redis(connection.url as string, options)
+            : new Redis({ ...connection, ...options });
         redis.on('error', (err: Error) => logger.error(err.message));
         return redis;
       },

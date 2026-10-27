@@ -5,11 +5,24 @@ import {
   CreateTenantSchema,
   CreateUserSchema,
   IntegrationProviderSchema,
+  SendNotificationSchema,
   TenantPageQuerySchema,
   UpdateTenantSchema,
   UpsertTenantIntegrationSchema,
   UserSchema,
 } from '../dist/index.js';
+
+test('notification data rejects keys and sizes that FCM would refuse', () => {
+  const base = { userId: '01a17d01-acd3-775a-a34d-efdb20d0a988', title: 't', body: 'b' };
+  const ok = (data) => SendNotificationSchema.safeParse({ ...base, data }).success;
+  assert.ok(ok({ orderId: '42', fromAddress: 'x', googleish: 'y' }));
+  for (const key of ['from', 'notification', 'message_type', 'google.c.a', 'gcm.n.e']) {
+    assert.ok(!ok({ [key]: 'x' }), key);
+  }
+  assert.ok(ok({ a: 'x'.repeat(1000) }));
+  assert.ok(!ok({ a: 'x'.repeat(1000), b: 'y'.repeat(100) }), 'over 1024 bytes');
+  assert.ok(!ok({ a: 'é'.repeat(600) }), 'bytes, not characters');
+});
 
 test('tenants cannot change their own tier', () => {
   assert.equal('tier' in UpdateTenantSchema.parse({ name: 'Acme', tier: 'enterprise' }), false);

@@ -1,8 +1,10 @@
-// Shared e2e setup. Needs the docker-compose database and apps/api/.env (see README).
+// Shared e2e setup. Needs the docker-compose database and Redis, and apps/api/.env (see README).
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { hash } from '@node-rs/argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { Queue } from 'bullmq';
 import { createApp } from '../dist/app.js';
 import { PrismaClient } from '../dist/generated/prisma/client.js';
 
@@ -13,6 +15,13 @@ if (existsSync('.env')) process.loadEnvFile();
 process.env.TRUST_PROXY_HOPS = '1';
 export const randomIp = () => `10.${[0, 0, 0].map(() => Math.floor(Math.random() * 256)).join('.')}`;
 const CLIENT_IP = randomIp();
+
+// Same idea for queues: each test process has its own, so no worker picks up another file's jobs.
+export const QUEUE_PREFIX = `test-${crypto.randomUUID().slice(0, 8)}`;
+process.env.QUEUE_PREFIX = QUEUE_PREFIX;
+// Captured now: a test may point the app at an unreachable Redis afterwards.
+export const QUEUE_CONNECTION = { url: process.env.REDIS_URL };
+export const testQueue = (name) => new Queue(name, { connection: QUEUE_CONNECTION, prefix: QUEUE_PREFIX });
 
 export const PASSWORD = 'correct horse battery staple';
 export const FIXTURES = join(import.meta.dirname, 'fixtures');
@@ -59,11 +68,26 @@ export async function startApp({ optionalModulesDir } = {}) {
   return { app, base, call, login };
 }
 
-export async function cleanup(app, tenantIds) {
-  await app?.close();
+export async function waitFor(check, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await sleep(50);
+  }
+  throw new Error(`timed out after ${timeoutMs} ms`);
+}
+
+export async function cleanup(apps, tenantIds) {
+  for (const app of [apps].flat()) await app?.close();
+  for (const name of ['notifications', 'notifications-dlq']) {
+    const queue = testQueue(name);
+    await queue.obliterate({ force: true }).catch(() => {});
+    await queue.close();
+  }
   const tenantId = { in: tenantIds };
   await db.tenantIntegration.deleteMany({ where: { tenantId } });
   await db.apiKey.deleteMany({ where: { tenantId } });
+  // Also removes their push devices (cascade).
   await db.user.deleteMany({ where: { tenantId } });
   await db.tenant.deleteMany({ where: { id: tenantId } });
   await db.$disconnect();

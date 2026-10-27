@@ -1,9 +1,12 @@
 // Runs in its own process so AUTH_PROVIDER can be overridden before the app boots.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { SignJWT } from 'jose';
 import { createApp } from '../dist/app.js';
-import { randomIp } from './helpers.mjs';
+import { cleanup, randomIp } from './helpers.mjs';
+
+// The booted apps are closed by each test; this empties the queues their workers created.
+after(() => cleanup([], []));
 
 async function boot(provider) {
   process.env.AUTH_PROVIDER = provider;

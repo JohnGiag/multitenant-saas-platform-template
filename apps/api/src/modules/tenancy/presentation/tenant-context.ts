@@ -5,12 +5,10 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  type CallHandler,
+  type CanActivate,
   type ExecutionContext,
-  type NestInterceptor,
 } from '@nestjs/common';
 import { IdSchema } from '@repo/shared-types';
-import type { Observable } from 'rxjs';
 import type { AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../domain/ports/tenant.repository.js';
 import { resolveTenantId } from '../domain/tenant-context.js';
@@ -19,15 +17,16 @@ interface TenantRequest extends AuthenticatedRequest {
   tenantId?: string;
 }
 
-// Global; runs after AuthGuard, so the principal is already verified. Never reads the body.
+// Global, registered after AuthGuard (see AppModule), so the principal is already verified.
+// Never reads the body. A guard, so a 400/403/404 is answered before any SSE stream starts.
 @Injectable()
-export class TenantContextInterceptor implements NestInterceptor {
+export class TenantContextGuard implements CanActivate {
   constructor(@Inject(TENANT_REPOSITORY) private readonly tenants: TenantRepository) {}
 
-  async intercept(ctx: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<TenantRequest>();
     if (req.principal) req.tenantId = await this.resolve(req);
-    return next.handle();
+    return true;
   }
 
   private async resolve(req: TenantRequest): Promise<string> {
