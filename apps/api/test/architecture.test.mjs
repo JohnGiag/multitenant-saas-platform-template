@@ -29,12 +29,15 @@ test('domain layers import no framework, ORM, vendor SDK or outer layer', () => 
   }
 });
 
-// Deleting any src/optional/<module> folder must never break compilation of the core.
-test('core code never imports an optional module', () => {
+// Deleting any src/optional/<module> folder must never break compilation of anything else:
+// only files inside that same folder may import from it (core and other optional modules may not).
+test('optional modules are imported only from inside their own folder', () => {
   const optionalDir = join(SRC, 'optional') + sep;
-  for (const file of sourceFiles.filter((f) => !f.startsWith(optionalDir))) {
+  const moduleOf = (path) => (path.startsWith(optionalDir) ? path.slice(optionalDir.length).split(sep)[0] : null);
+  for (const file of sourceFiles) {
     for (const spec of importsOf(file).filter((s) => s.startsWith('.'))) {
-      assert.ok(!resolve(dirname(file), spec).startsWith(optionalDir), `${file} imports "${spec}"`);
+      const target = moduleOf(resolve(dirname(file), spec));
+      assert.ok(target === null || target === moduleOf(file), `${file} imports "${spec}"`);
     }
   }
 });

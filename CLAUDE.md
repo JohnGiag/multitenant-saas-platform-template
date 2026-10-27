@@ -44,7 +44,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 
 - **Core modules** (always present): tenancy, auth, RBAC, API keys, BYOK integrations, rate limiting, jobs, notifications core, system capabilities.
 - **Optional modules** (e.g. FCM push, R2 storage, email dispatch) each live in one self-contained folder.
-- **Deleting an optional module's folder must not break compilation.** Core code never imports an optional module directly (enforced by `apps/api/test/architecture.test.mjs`).
+- **Deleting an optional module's folder must not break compilation.** Nothing outside an optional module's folder imports from it, neither core code nor other optional modules (enforced by `apps/api/test/architecture.test.mjs`). Shared code between optional modules belongs in core.
 - **Contract:** each optional module is a folder `apps/api/src/optional/<key>/` whose `index.ts` default-exports `{ key, integration?, module } satisfies OptionalModule` (from `modules/system/domain/optional-module.ts`). At startup the loader imports every compiled `optional/*/index.js` and adds `module` to the app; a folder without `index.js`, an invalid descriptor or a duplicate key stops startup.
 - `integration` names the `tenant_integrations` provider that switches the module on per tenant; omit it when the module needs no tenant configuration. `PUT /v1/integrations/:provider` only accepts providers declared by an installed module (deleting stays allowed, to clean up after uninstalled ones).
 - Optional modules may import core code; core reaches them only through ports (e.g. `INTEGRATION_SERVICE`) and the registry.
