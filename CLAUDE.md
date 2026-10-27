@@ -1,0 +1,104 @@
+# CLAUDE.md — enterprise-api-starter
+
+A reusable, project-agnostic **multi-tenant SaaS boilerplate**: a headless NestJS API core plus a Next.js admin dashboard. Every rule below is binding for all code in this repo.
+
+## Execution rule: feature by feature
+
+- Build **one feature or module at a time**. Never scaffold the whole app or several complex systems in one step.
+- Each step ends in a working, compiling state. Stop and wait for confirmation before starting the next feature.
+- Don't add speculative code, options or abstractions that the current feature doesn't need.
+
+## Tech stack
+
+| Area                                       | Choice                                        |
+| ------------------------------------------ | --------------------------------------------- |
+| Monorepo                                   | Turborepo + pnpm workspaces                   |
+| API (`apps/api`)                           | NestJS, modular monolith, Clean Architecture  |
+| Dashboard (`apps/web`)                     | Next.js (App Router), Tailwind CSS, shadcn/ui |
+| Shared contracts (`packages/shared-types`) | TypeScript interfaces, DTOs, Zod schemas      |
+| Data                                       | PostgreSQL 17 via Prisma ORM                  |
+| Cache / queues                             | Redis, BullMQ                                 |
+| Object storage                             | Cloudflare R2 / S3-compatible                 |
+
+## Repository layout
+
+```
+apps/
+  api/                 NestJS API
+  web/                 Next.js admin dashboard
+packages/
+  shared-types/        Zod schemas + inferred types shared by api and web
+```
+
+### API module layout (Clean Architecture)
+
+Each module under `apps/api/src/modules/<name>/` is split into:
+
+- `domain/`: entities, value objects, ports (interfaces). No framework or ORM imports.
+- `infrastructure/`: adapters that implement the ports (Prisma repositories, Redis, R2, Resend, FCM, Clerk).
+- `presentation/`: controllers, guards, request/response mapping.
+
+Dependencies point inward: presentation → domain ← infrastructure. Domain code never imports Prisma, NestJS HTTP types or vendor SDKs.
+
+## Plug-and-play modularity
+
+- **Core modules** (always present): tenancy, auth, RBAC, API keys, BYOK integrations, rate limiting, jobs, notifications core, system capabilities.
+- **Optional modules** (e.g. FCM push, R2 storage, email dispatch) each live in one self-contained folder.
+- **Deleting an optional module's folder must not break compilation.** Core code never imports an optional module directly. Optional modules register themselves, and core discovers them at runtime (a registry or a module list that is built from what exists).
+- `GET /v1/system/capabilities` reports which optional modules are installed and enabled. The web dashboard reads it to show or hide the settings for each feature.
+
+## Multi-tenancy
+
+- **Primary keys & IDs:** NEVER use auto-incrementing integer IDs (`autoincrement()`). All entities must use globally unique, time-sortable IDs (`UUIDv7` or `cuid2`) to prevent ID enumeration vulnerabilities and maintain index performance.
+- Every tenant-owned table has a non-null `tenant_id` column, and **every query filters by it**. No exceptions, including background jobs, admin tooling and raw SQL.
+- **Composite indexes on tenant-owned tables start with `tenant_id`** as the leftmost column (e.g. `@@index([tenantId, createdAt, id])`).
+- Tenant context is resolved once per request (auth token or API key) and passed explicitly or via request-scoped context. Never trust a `tenantId` from a request body.
+- Only `SuperAdmin` may operate across tenants, and only through explicit, audited code paths.
+- Every new tenant-scoped repository needs a test proving that tenant A cannot read or write tenant B's data.
+
+## Auth & security
+
+- **Provider abstraction:** a single `AuthService` port in the auth domain. Adapters: local (JWT + Argon2id password hashing) and Clerk. Selected by config. Swapping providers must not touch domain logic or other modules.
+- **RBAC roles:** `SuperAdmin`, `TenantAdmin`, `User`, `Auditor`. `Auditor` is read-only. Enforce with guards plus decorators on controllers; deny by default.
+- **API keys** (for headless clients): show the key once at creation, store only its hash, look it up by a non-secret prefix, compare in constant time, scope it to a tenant, and support revoking it.
+- **BYOK secrets** (`tenant_integrations` table): tenant-provided keys (Resend, Firebase, R2, …) are encrypted with **AES-256-GCM**, with a random 96-bit IV for each encryption, and the auth tag is stored with the ciphertext. The master key comes from the environment and must never be logged. Secrets are decrypted only at the moment of use and never returned by the API. Responses show only masked values.
+- Validate all input at the boundary with Zod schemas from `packages/shared-types`.
+- Never log secrets, tokens, passwords or full PII.
+
+### Compliance targets
+
+- **ISO 27001**: access control, encryption at rest and in transit, audit logs for security-relevant actions.
+- **ISO 27701**: minimal PII collection, tenant-scoped PII, support for export and deletion of a data subject's records.
+- **ISO 42001**: any AI feature records model, input metadata, output and actor in an audit trail.
+
+## File storage (R2 / S3)
+
+- Optional storage module behind a `StorageProvider` port.
+- Clients upload and download through **presigned URLs**. File bytes never go through the API.
+- Object keys are prefixed with the tenant ID (`<tenantId>/...`).
+- Credentials and bucket config can be set per tenant (BYOK through `tenant_integrations`), with platform defaults as a fallback.
+
+## Infrastructure & performance
+
+- **Rate limiting:** Redis sliding window, keyed by tenant + user (or API key) + tier. Return `429` with a `Retry-After` header.
+- **Background jobs:** heavy work (emails, webhooks, processing) runs on BullMQ workers. Every job payload carries `tenantId`, and the worker loads that tenant's secrets when it runs (no secrets in job payloads). Use retries with backoff, and send jobs that run out of attempts to a **dead-letter queue**.
+- **Pagination:** every list endpoint uses **keyset (cursor) pagination** over a stable order (e.g. `(created_at, id)`), backed by an index that starts with `tenant_id`. Never use `OFFSET`.
+
+## Notifications
+
+- A multi-channel dispatcher with these channels: **SSE** (real-time web updates), **FCM** (push), **Resend** (transactional email).
+- Each channel is a pluggable adapter. If a channel's module is missing or the tenant hasn't configured it, the dispatcher skips that channel without errors and logs at debug level.
+- Delivery runs through BullMQ, except SSE fan-out.
+
+## Frontend (`apps/web`)
+
+- Must meet **WCAG 2.1/2.2 AA**: semantic HTML, Radix/shadcn primitives, visible focus, full keyboard operation, labelled form controls, AA colour contrast, and `aria-live` for async status.
+- Feature settings pages render only when `/v1/system/capabilities` reports the feature.
+- API types and validation come from `packages/shared-types`. Don't duplicate DTOs.
+
+## Conventions
+
+- TypeScript `strict` everywhere. Extend `tsconfig.base.json`.
+- API routes are versioned under `/v1`.
+- Database columns use `snake_case` (mapped through Prisma `@map`). TypeScript uses `camelCase`.
+- Root scripts (`pnpm build | dev | typecheck | test`) run through Turborepo.

@@ -1,0 +1,30 @@
+{
+  "name": "@repo/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "prisma generate && nest build",
+    "dev": "prisma generate && nest start --watch",
+    "start": "node dist/main.js",
+    "typecheck": "prisma generate && tsc --noEmit",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.3.1",
+    "@nestjs/config": "^12.0.1",
+    "@nestjs/core": "^12.3.1",
+    "@nestjs/platform-express": "^12.3.1",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "@repo/shared-types": "workspace:*",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^12.0.11",
+    "@types/node": "^24.19.2",
+    "prisma": "7.10.1"
+  }
+}

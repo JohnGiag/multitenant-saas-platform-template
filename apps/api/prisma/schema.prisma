@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Keep enums identical to packages/shared-types (checked at compile time).
+enum Role {
+  SuperAdmin
+  TenantAdmin
+  User
+  Auditor
+
+  @@map("role")
+}
+
+enum TenantTier {
+  free
+  pro
+  enterprise
+
+  @@map("tenant_tier")
+}
+
+model Tenant {
+  id        String     @id @default(uuid(7)) @db.Uuid
+  name      String
+  tier      TenantTier @default(free)
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  users        User[]
+  integrations TenantIntegration[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  email        String
+  // Null for users managed by an external auth provider (e.g. Clerk).
+  passwordHash String?  @map("password_hash")
+  role         Role     @default(User)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, email])
+  // UUIDv7 ids are time-ordered, so (tenant_id, id) also serves keyset pagination.
+  @@index([tenantId, id])
+  @@map("users")
+}
+
+model TenantIntegration {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  // Free-form so optional modules can add providers without a migration.
+  provider        String
+  // AES-256-GCM: iv + auth tag + ciphertext.
+  encryptedConfig Bytes    @map("encrypted_config")
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  // Also serves "all integrations of a tenant"; at most one row per provider, so no paging index.
+  @@unique([tenantId, provider])
+  @@map("tenant_integrations")
+}
