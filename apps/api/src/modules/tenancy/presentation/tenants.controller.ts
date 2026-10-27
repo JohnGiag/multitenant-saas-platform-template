@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Inject,
@@ -79,7 +80,9 @@ export class TenantsController {
   @Delete(':id')
   @HttpCode(204)
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    if (!(await this.tenants.delete(id))) throw new NotFoundException();
+    const result = await this.tenants.delete(id);
+    if (result === 'not_found') throw new NotFoundException();
+    if (result === 'protected') throw new ForbiddenException('The platform tenant holds the SuperAdmin accounts and is never deleted');
   }
 
   private found(tenant: Tenant | null): Tenant {

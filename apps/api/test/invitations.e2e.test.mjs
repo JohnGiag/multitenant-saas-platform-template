@@ -132,9 +132,12 @@ test('rules: members, roles, who may invite, and tenant isolation', async () => 
   assert.equal((await call('GET', '/invitations', { token: tokens.user })).status, 403);
 
   const ofA = await db.invitation.findFirstOrThrow({ where: { tenantId: tenants.a } });
+  // Tenant B's admin can neither revoke nor resend it: nothing is deleted, no email goes out.
+  const sent = emails.length;
   assert.equal((await call('DELETE', `/invitations/${ofA.id}`, { token: tokens.adminB })).status, 404);
   assert.equal((await call('POST', `/invitations/${ofA.id}/resend`, { token: tokens.adminB })).status, 404);
-  assert.equal(emails.filter((e) => e.to[0] === ofA.email).length, 0);
+  assert.equal(emails.length, sent);
+  assert.equal(await db.invitation.count({ where: { id: ofA.id } }), 1);
 });
 
 test('when the email fails, no invitation is left behind', async () => {

@@ -11,6 +11,9 @@ const DEFAULT_DIR = fileURLToPath(new URL('../../../optional/', import.meta.url)
 const DescriptorSchema = z.object({
   key: z.string().regex(/^[a-z0-9-]{1,64}$/),
   integration: IntegrationProviderSchema.optional(),
+  worksWithoutIntegration: z
+    .custom<NonNullable<OptionalModule['worksWithoutIntegration']>>((value) => typeof value === 'function')
+    .optional(),
   module: z.custom<OptionalModule['module']>((value) => typeof value === 'function'),
 });
 

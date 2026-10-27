@@ -93,6 +93,7 @@ export async function cleanup(apps, tenantIds) {
     await queue.close();
   }
   const tenantId = { in: tenantIds };
+  await db.auditLog.deleteMany({ where: { tenantId } });
   await db.tenantIntegration.deleteMany({ where: { tenantId } });
   await db.invitation.deleteMany({ where: { tenantId } });
   await db.apiKey.deleteMany({ where: { tenantId } });

@@ -1,4 +1,5 @@
 import { Controller, Get, Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { CapabilityResponse } from '@repo/shared-types';
 import { Roles } from '../../auth/presentation/decorators.js';
 import { INTEGRATION_SERVICE, type IntegrationService } from '../../integrations/domain/ports/integration.service.js';
@@ -10,6 +11,7 @@ export class CapabilitiesController {
   constructor(
     @Inject(OPTIONAL_MODULES) private readonly modules: OptionalModule[],
     @Inject(INTEGRATION_SERVICE) private readonly integrations: IntegrationService,
+    private readonly config: ConfigService,
   ) {}
 
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
@@ -17,6 +19,6 @@ export class CapabilitiesController {
   async capabilities(@TenantId() tenantId: string): Promise<CapabilityResponse> {
     const providers = this.modules.flatMap((m) => (m.integration ? [m.integration] : []));
     const enabled = await this.integrations.enabledProviders(tenantId, providers);
-    return { capabilities: toCapabilities(this.modules, enabled) };
+    return { capabilities: toCapabilities(this.modules, enabled, (name) => this.config.get<string>(name) || undefined) };
   }
 }

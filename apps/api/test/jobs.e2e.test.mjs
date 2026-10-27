@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { Worker } from 'bullmq';
+import { TENANT_REPOSITORY } from '../dist/modules/tenancy/domain/ports/tenant.repository.js';
 import { cleanup, db, QUEUE_CONNECTION, QUEUE_PREFIX, seedTenant, startApp, testQueue, waitFor } from './helpers.mjs';
 
 process.env.JOB_ATTEMPTS = '1';
@@ -73,4 +74,23 @@ test('the DLQ keeps only its newest DLQ_MAX_ENTRIES entries', async () => {
   await waitFor(async () => (await dlq.count()) === 2);
   const titles = (await dlq.getWaiting()).map((j) => j.data.payload.notification.title).sort();
   assert.deepEqual(titles, ['second', 'third']);
+});
+
+test("deleting a tenant drops its pending and dead-lettered jobs, and no one else's", async () => {
+  const doomed = await seedTenant('jobs-e2e-doomed');
+  // Delayed, so the running worker leaves them alone.
+  const later = { delay: 60_000 };
+  const theirs = await queue.add('email', { tenantId: doomed, channel: 'email', notification: notification('theirs') }, later);
+  const ours = await queue.add('email', { tenantId, channel: 'email', notification: notification('ours') }, later);
+  const theirDead = await dlq.add('email', { payload: { tenantId: doomed } });
+  const ourDead = await dlq.add('email', { payload: { tenantId } });
+
+  await started.app.get(TENANT_REPOSITORY).delete(doomed);
+
+  assert.equal(await queue.getJob(theirs.id), undefined);
+  assert.equal(await dlq.getJob(theirDead.id), undefined);
+  assert.ok(await queue.getJob(ours.id));
+  assert.ok(await dlq.getJob(ourDead.id));
+  await (await queue.getJob(ours.id)).remove();
+  await (await dlq.getJob(ourDead.id)).remove();
 });

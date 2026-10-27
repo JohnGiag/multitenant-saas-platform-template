@@ -1,9 +1,10 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { validateEnv } from './config/env.validation.js';
 import { PrismaModule } from './infrastructure/prisma/prisma.module.js';
 import { RedisModule } from './infrastructure/redis/redis.module.js';
+import { AuditInterceptor } from './modules/audit/presentation/audit.interceptor.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { AccessGuard } from './modules/auth/presentation/access.guard.js';
 import { AuthGuard } from './modules/auth/presentation/auth.guard.js';
@@ -46,6 +47,8 @@ export class AppModule {
         { provide: APP_GUARD, useExisting: RateLimitGuard },
         { provide: APP_GUARD, useExisting: AccessGuard },
         { provide: APP_GUARD, useExisting: TenantContextGuard },
+        // Records successful writes; it never rejects, so it is an interceptor, not a guard.
+        { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
       ],
     };
   }

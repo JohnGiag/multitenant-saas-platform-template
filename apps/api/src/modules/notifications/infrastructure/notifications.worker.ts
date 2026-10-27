@@ -7,6 +7,7 @@ import { REDIS_CLIENT } from '../../../infrastructure/redis/redis.module.js';
 import { INTEGRATION_SERVICE, type IntegrationService } from '../../integrations/domain/ports/integration.service.js';
 import { DeadLetteringWorker, type DeadLetterRecord } from '../../jobs/dead-lettering.worker.js';
 import { deadLetterQueueName } from '../../jobs/jobs.module.js';
+import { TenantDeletionHooks } from '../../tenancy/domain/tenant-deletion-hooks.js';
 import {
   NotificationChannelRegistry,
   PermanentDeliveryError,
@@ -22,10 +23,11 @@ export class NotificationsWorker extends DeadLetteringWorker<NotificationJob> {
     @InjectQueue(deadLetterQueueName(NOTIFICATIONS_QUEUE)) dlq: Queue<DeadLetterRecord<NotificationJob>>,
     config: ConfigService,
     @Inject(REDIS_CLIENT) redis: Redis,
+    deletionHooks: TenantDeletionHooks,
     private readonly registry: NotificationChannelRegistry,
     @Inject(INTEGRATION_SERVICE) private readonly integrations: IntegrationService,
   ) {
-    super(queue, dlq, config, redis);
+    super(queue, dlq, config, redis, deletionHooks);
   }
 
   async process(job: Job<NotificationJob>): Promise<NotificationJobResult> {

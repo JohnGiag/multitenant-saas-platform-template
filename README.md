@@ -97,15 +97,26 @@ Behind a load balancer, set `TRUST_PROXY_HOPS` to the number of proxies so the r
 ## File storage (optional module `storage`)
 
 - Works with Cloudflare R2 or any S3-compatible store. File bytes never pass through the API: it hands out presigned URLs that are valid for 15 minutes, and clients transfer the files directly to and from the bucket.
-- `POST /v1/storage/uploads` (`TenantAdmin`, `User`) with `{ filename }` answers `201` with `{ key, url, expiresAt }`. The client `PUT`s the bytes to `url`. The key is `<tenantId>/<random>/<filename>`, so uploads never overwrite each other.
+- `POST /v1/storage/uploads` (`TenantAdmin`, `User`) with `{ filename, size }` answers `201` with `{ key, url, expiresAt }`. `size` is the exact size in bytes, at most 1 MB (`MAX_UPLOAD_BYTES`). The client `PUT`s exactly that many bytes to `url`; the size is signed into the URL, so the store refuses any other size. The key is `<tenantId>/<random>/<filename>`, so uploads never overwrite each other.
 - `GET /v1/storage/downloads?key=` (`TenantAdmin`, `User`, `Auditor`) answers `{ url, expiresAt }`. The file is served as an attachment. A key outside the caller's tenant answers `404`.
-- Each tenant can use its own bucket via `PUT /v1/integrations/r2` with `{ endpoint, bucket, accessKeyId, secretAccessKey, region? }`; `region` defaults to `auto`, which is what R2 uses. Tenants without one use the platform bucket (`STORAGE_*` in `.env`). If neither is configured, the endpoints answer `503`.
+- `DELETE /v1/storage/objects?key=` (`TenantAdmin`, `User`) deletes a file from the platform bucket and frees its quota. Only the user or API key that uploaded it, or a `TenantAdmin`, may delete it; anyone else gets `403`. Reading stays open to the whole tenant. Files in a tenant's own bucket answer `404`; delete those with the bucket's own tools (the API never sends requests to a tenant-chosen endpoint).
+- **Own bucket:** a tenant can use its own bucket via `PUT /v1/integrations/r2` with `{ endpoint, bucket, accessKeyId, secretAccessKey, region? }`; `region` defaults to `auto`, which is what R2 uses. New uploads then go there, with no quota.
+- **Platform bucket:** tenants without their own bucket use the platform's (`STORAGE_*` in `.env`), with a quota of 100 MB and 1,000 files per tenant (`PLATFORM_QUOTA` in `optional/storage/domain/platform-quota.ts`). An upload over the quota answers `409`. The quota counts each upload URL issued, whether or not the file was then sent; deleting the key frees it. If neither bucket is configured, the endpoints answer `503`.
+- **Deleting a tenant** also deletes its files from the platform bucket. Files in its own bucket are left to it.
+- **Browser uploads need CORS on the bucket.** Browsers ask the bucket before a cross-site `PUT`, and R2 refuses unless the bucket allows the dashboard's origin. In the R2 dashboard (bucket → Settings → CORS policy):
+
+  ```json
+  [{ "AllowedOrigins": ["https://your-dashboard.example"], "AllowedMethods": ["PUT", "GET"], "AllowedHeaders": ["content-type"], "MaxAgeSeconds": 3600 }]
+  ```
+
+  A tenant's own bucket needs the same rule.
 
 ## Tenants and integrations
 
 - Every request acts on the caller's own tenant. A `SuperAdmin` may act on another tenant by sending `X-Tenant-Id: <tenantId>`; anyone else sending a different id gets `403`.
 - A `SuperAdmin` manages tenants (and, once built, their users) only. Integrations (BYOK secrets) and notifications belong to each tenant's own `TenantAdmin`; a `SuperAdmin` gets `403` there, with or without `X-Tenant-Id`.
 - `GET /v1/tenants/current` reads the current tenant; `PATCH /v1/tenants/current` renames it (`TenantAdmin`).
-- `SuperAdmin` only: `POST /v1/tenants`, `GET /v1/tenants?cursor=&limit=`, `PATCH /v1/tenants/:id` (name, tier), `DELETE /v1/tenants/:id` (deletes the tenant with all its users, invitations, API keys and integrations).
+- `SuperAdmin` only: `POST /v1/tenants`, `GET /v1/tenants?cursor=&limit=`, `PATCH /v1/tenants/:id` (name, tier), `DELETE /v1/tenants/:id` (deletes the tenant with all its users, invitations, API keys, integrations and audit records, plus its queued and dead-lettered jobs and its files in the platform bucket). The platform tenant, the one holding the `SuperAdmin` accounts, can never be deleted (`403`), neither through the API nor through a Clerk organization deletion.
+- **Audit log:** every successful write (`POST`, `PUT`, `PATCH`, `DELETE`) by a signed-in user or API key is recorded in `audit_logs`: the actor (kind, id, role), the route pattern, the `:id` target, the status, and, when a `SuperAdmin` acted on another tenant, which one. Rows are kept in the actor's own tenant, so a `SuperAdmin`'s actions survive the deletion of the tenant they acted on. Reads, rejected requests and unauthenticated calls (login, invitation acceptance, webhooks) are not recorded. There is no API to read it yet: query the table.
 - `GET /v1/system/capabilities` lists the installed optional modules (`apps/api/src/optional/<key>/`) and whether each is enabled for the current tenant. Delete a module's folder to uninstall it; nothing else needs to change.
 - BYOK secrets: `PUT /v1/integrations/:provider` with `{ config, enabled? }` stores a provider's config encrypted with AES-256-GCM (only providers used by an installed module; others get `404`); `GET /v1/integrations` lists them with masked values only; `DELETE /v1/integrations/:provider` removes them. Secrets are never returned by the API.

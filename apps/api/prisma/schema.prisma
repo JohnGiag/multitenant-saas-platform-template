@@ -40,6 +40,8 @@ model Tenant {
   pushDevices    PushDevice[]
   invitations    Invitation[]
   passwordResets PasswordReset[]
+  auditLogs      AuditLog[]
+  storageObjects StorageObject[]
 
   @@map("tenants")
 }
@@ -172,4 +174,51 @@ model PasswordReset {
 
   @@index([tenantId, userId])
   @@map("password_resets")
+}
+
+// Who changed what (ISO 27001): one row per successful write by a signed-in user or API key. Append-only.
+// Kept in the actor's own tenant, so a SuperAdmin's actions survive the deletion of the tenant they acted on.
+model AuditLog {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  // The actor's own tenant.
+  tenantId        String   @map("tenant_id") @db.Uuid
+  // "user" or "apiKey", and its id: no email or name, so no PII beyond the id.
+  actorKind       String   @map("actor_kind")
+  actorId         String   @map("actor_id") @db.Uuid
+  actorRole       Role     @map("actor_role")
+  // Set when a SuperAdmin acted on another tenant (X-Tenant-Id). No foreign key: it may be deleted since.
+  actedOnTenantId String?  @map("acted_on_tenant_id") @db.Uuid
+  method          String
+  // The route pattern (e.g. /v1/users/:id), never the raw URL, which can carry filenames or emails.
+  route           String
+  // The `:id` route parameter, if any.
+  targetId        String?  @map("target_id")
+  status          Int
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, createdAt, id])
+  @@map("audit_logs")
+}
+
+// Files in the platform bucket, used by the optional storage module (src/optional/storage): counted
+// against the tenant's quota, and erased with the tenant. Files in a tenant's own bucket are not tracked.
+model StorageObject {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  key       String   @unique
+  // Bytes reserved when the upload URL was issued; the URL only accepts exactly this size.
+  size       Int
+  // The user or API key that asked for the upload URL: it (or a TenantAdmin) may delete the file.
+  // No foreign key: users and keys can be removed while their files stay.
+  uploaderId String   @map("uploader_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Cascade: core tenant deletion must not need to know this optional table. The storage module's
+  // deletion hook removes the files from the bucket first.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, id])
+  @@map("storage_objects")
 }

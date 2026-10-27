@@ -11,6 +11,8 @@ import {
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
+// A hung Google API would otherwise hold a worker slot for undici's 5-minute default; a timeout is retried.
+const TIMEOUT_MS = 10_000;
 
 const ServiceAccountSchema = z.object({
   project_id: z.string().min(1),
@@ -57,6 +59,7 @@ export class FcmChannel implements NotificationChannel, OnModuleInit {
             data: notification.data,
           },
         }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (res.ok) continue;
       const body = await res.text();
@@ -88,6 +91,7 @@ export class FcmChannel implements NotificationChannel, OnModuleInit {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) throwForStatus('Google OAuth', res.status, await res.text());
     return ((await res.json()) as { access_token: string }).access_token;

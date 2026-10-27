@@ -3,6 +3,7 @@ import { Logger, type BeforeApplicationShutdown, type OnApplicationBootstrap } f
 import type { ConfigService } from '@nestjs/config';
 import type { Job, Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
+import { TenantDeletionHooks } from '../tenancy/domain/tenant-deletion-hooks.js';
 import { jobConfig } from './job-config.js';
 
 // What lands in a DLQ: enough to diagnose the failure and replay the original payload.
@@ -25,7 +26,8 @@ export interface DeadLetterRecord<T> {
 
 // Base for every worker, ported from nestjs-fault-tolerant-queue's QueueWorker: a thrown error fails
 // the attempt and BullMQ retries with backoff; once it gives up, the job is copied to the DLQ.
-export abstract class DeadLetteringWorker<T>
+// Every payload carries its tenant, so a deleted tenant's jobs can be found and dropped.
+export abstract class DeadLetteringWorker<T extends { tenantId: string }>
   extends WorkerHost
   implements OnApplicationBootstrap, BeforeApplicationShutdown
 {
@@ -37,8 +39,27 @@ export abstract class DeadLetteringWorker<T>
     private readonly config: ConfigService,
     // The fail-fast request-path client (REDIS_CLIENT), used only to check Redis at shutdown.
     private readonly redis: Redis,
+    deletionHooks: TenantDeletionHooks,
   ) {
     super();
+    deletionHooks.register((tenantId) => this.forgetTenant(tenantId));
+  }
+
+  // A deleted tenant's pending, retrying and dead-lettered jobs go too: their payloads hold its data.
+  // A job already running finishes, and then finds the tenant's secrets gone.
+  // shortcut: loads every pending and dead-lettered job to filter by tenant; fine for a rare deletion,
+  // index jobs by tenant if queues hold millions.
+  async forgetTenant(tenantId: string): Promise<void> {
+    const pending = await this.sourceQueue.getJobs(['wait', 'delayed', 'prioritized', 'failed']);
+    const dead = await this.dlq.getJobs(['wait']);
+    await Promise.all([
+      // A job a worker picked up since the listing is locked and cannot be removed: it runs, finds the
+      // tenant's secrets gone, and skips. Not a reason to abort the tenant's deletion.
+      ...pending
+        .filter((job) => job?.data.tenantId === tenantId)
+        .map((job) => job.remove().catch(() => undefined)),
+      ...dead.filter((job) => job?.data.payload.tenantId === tenantId).map((job) => job.remove()),
+    ]);
   }
 
   // Runs before @nestjs/bullmq closes workers (onApplicationShutdown). A graceful close lets running
@@ -73,7 +94,8 @@ export abstract class DeadLetteringWorker<T>
       // The original error object is gone; rebuild it from what BullMQ stored.
       const error = new Error(job.failedReason);
       error.stack = job.stacktrace?.at(-1) ?? error.stack;
-      await this.onFailed(job, error);
+      // BullMQ's types widen the job's data once T is constrained; it is still a Job<T>.
+      await this.onFailed(job as Job<T>, error);
     }
   }
 

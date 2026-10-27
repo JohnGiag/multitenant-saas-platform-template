@@ -101,3 +101,12 @@ test('deleting a tenant removes everything in it, even its last TenantAdmin', as
   // Other tenants are untouched.
   assert.equal(await db.user.count({ where: { tenantId: tenants.a } }), 3);
 });
+
+test('the platform tenant (it holds the SuperAdmins) can never be deleted', async () => {
+  const res = await call('DELETE', `/tenants/${tenants.platform}`, { token: tokens.super });
+  assert.equal(res.status, 403);
+  assert.equal(await db.tenant.count({ where: { id: tenants.platform } }), 1);
+  assert.equal(await db.user.count({ where: { tenantId: tenants.platform, role: 'SuperAdmin' } }), 1);
+  // Nothing else was touched either: the SuperAdmin still signs in and works.
+  assert.equal((await call('GET', '/tenants', { token: tokens.super })).status, 200);
+});

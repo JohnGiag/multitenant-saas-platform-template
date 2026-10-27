@@ -60,6 +60,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - Only `SuperAdmin` may operate across tenants, and only through explicit, audited code paths.
 - **`SuperAdmin` manages tenants and their users, nothing inside them.** It never gets a tenant's integrations (BYOK secrets), messaging or other business data, not even via `X-Tenant-Id`: leave `SuperAdmin` out of `@Roles` on such routes. Its own account routes (`/auth/me`, its own stream and devices) are fine.
 - Every new tenant-scoped repository needs a test proving that tenant A cannot read or write tenant B's data.
+- **Deleting a tenant erases everything it owns.** Core tables are deleted in `PrismaTenantRepository.delete`. Data kept elsewhere (files in a bucket, queued jobs) is erased by a hook registered in `TenantDeletionHooks` (`modules/tenancy`). Hooks run before the rows are deleted and must be safe to run twice. An optional module's table uses `onDelete: Cascade` on its tenant relation, so core never names it.
 
 ## Auth & security
 
@@ -73,7 +74,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 
 ### Compliance targets
 
-- **ISO 27001**: access control, encryption at rest and in transit, audit logs for security-relevant actions.
+- **ISO 27001**: access control, encryption at rest and in transit, audit logs for security-relevant actions. `AuditInterceptor` (`modules/audit`) records every successful write by a signed-in caller in `audit_logs`, in the actor's own tenant. It records only ids and route patterns, never raw URLs, bodies or PII.
 - **ISO 27701**: minimal PII collection, tenant-scoped PII, support for export and deletion of a data subject's records.
 - **ISO 42001**: any AI feature records model, input metadata, output and actor in an audit trail.
 
@@ -83,11 +84,12 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - Clients upload and download through **presigned URLs**. File bytes never go through the API.
 - Object keys are prefixed with the tenant ID (`<tenantId>/...`).
 - Credentials and bucket config can be set per tenant (BYOK through `tenant_integrations`), with platform defaults as a fallback.
+- Upload URLs sign the exact file size (max `MAX_UPLOAD_BYTES`, 1 MB). Files in the platform bucket are tracked in `storage_objects` and capped per tenant (`PLATFORM_QUOTA`). The API sends requests only to the platform bucket, never to a tenant-chosen endpoint (SSRF).
 
 ## Infrastructure & performance
 
 - **Rate limiting:** Redis sliding window, keyed by tenant + user (or API key) + tier. Return `429` with a `Retry-After` header. Implemented as a global guard (`modules/rate-limit`); `AppModule` registers the guard chain in order `AuthGuard` (identifies, never rejects) → `RateLimitGuard` → `AccessGuard` (roles, 401/403) → `TenantContextGuard`, so every route is covered without opting in, rejected credentials included: authenticated callers get their tier's limit and fail open when Redis is down; public routes are limited per client IP and route and fail closed. Login is also limited per account (tenant + hashed email) across IPs; a successful login resets that counter. Limits live in `rate-limit-policy.ts`.
-- **Background jobs:** heavy work (emails, webhooks, processing) runs on BullMQ workers. Every job payload carries `tenantId`, and the worker loads that tenant's secrets when it runs (no secrets in job payloads). Use retries with backoff, and send jobs that run out of attempts to a **dead-letter queue**. New queues use `JobsModule.registerQueue(name)` (shared retry policy + `<name>-dlq`) and a worker extending `DeadLetteringWorker` (`modules/jobs`), which handles dead-lettering, the startup sweep and shutdown during a Redis outage.
+- **Background jobs:** heavy work (emails, webhooks, processing) runs on BullMQ workers. Every job payload carries `tenantId`, and the worker loads that tenant's secrets when it runs (no secrets in job payloads). Use retries with backoff, and send jobs that run out of attempts to a **dead-letter queue**. New queues use `JobsModule.registerQueue(name)` (shared retry policy + `<name>-dlq`) and a worker extending `DeadLetteringWorker` (`modules/jobs`), which handles dead-lettering, the startup sweep, shutdown during a Redis outage, and dropping a deleted tenant's jobs. Every outgoing HTTP call has a timeout (`AbortSignal.timeout`), so a hung provider cannot hold a worker slot.
 - **Pagination:** every list endpoint uses **keyset (cursor) pagination** over a stable order (e.g. `(created_at, id)`), backed by an index that starts with `tenant_id`. Never use `OFFSET`. Use `common/keyset.ts` (`keysetArgs` + `keysetPage`, cursor validated by `keysetCursorSchema(<sort field's Zod type>)`, e.g. `z.iso.datetime()` for `created_at`) with an index on `(tenant_id, <field>, id)`; a unique sort key can use `toCursorPage` directly. `apps/api/test/pagination.e2e.test.mjs` shows how to prove the index is used with `EXPLAIN`.
 
 ## Notifications

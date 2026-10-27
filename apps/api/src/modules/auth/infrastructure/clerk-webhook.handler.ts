@@ -117,7 +117,11 @@ export class ClerkWebhookHandler {
     // Before the lookup: the deletion can arrive before organization.created.
     await this.tombstone(clerkOrgId, at);
     const tenant = await this.prisma.tenant.findUnique({ where: { clerkOrgId }, select: { id: true } });
-    if (tenant) await this.tenants.delete(tenant.id);
+    if (!tenant) return;
+    // Answered 204 all the same: Svix retrying the event would never change the outcome.
+    if ((await this.tenants.delete(tenant.id)) === 'protected') {
+      this.logger.warn(`Clerk organization ${clerkOrgId} was deleted, but it is the platform tenant: kept`);
+    }
   }
 
   private async updateEmail({ id, primary_email_address_id, email_addresses }: z.infer<typeof ClerkUserSchema>) {

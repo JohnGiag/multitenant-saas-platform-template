@@ -5,6 +5,7 @@ import { hasCode } from '../../../common/prisma-errors.js';
 import type { Tenant as TenantRow } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import type { TenantRepository } from '../domain/ports/tenant.repository.js';
+import { TenantDeletionHooks } from '../domain/tenant-deletion-hooks.js';
 
 const toTenant = (row: TenantRow): Tenant => ({
   id: row.id,
@@ -16,7 +17,10 @@ const toTenant = (row: TenantRow): Tenant => ({
 
 @Injectable()
 export class PrismaTenantRepository implements TenantRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly deletionHooks: TenantDeletionHooks,
+  ) {}
 
   async create(input: CreateTenantDto): Promise<Tenant> {
     return toTenant(await this.prisma.tenant.create({ data: input }));
@@ -46,9 +50,21 @@ export class PrismaTenantRepository implements TenantRepository {
     }
   }
 
-  async delete(id: string): Promise<boolean> {
+  async delete(id: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      select: { _count: { select: { users: { where: { role: 'SuperAdmin' } } } } },
+    });
+    if (!tenant) return 'not_found' as const;
+    // The platform tenant: deleting it would delete every SuperAdmin and lock the platform out. The API
+    // never creates or demotes SuperAdmins, so a tenant cannot gain or lose this protection through it.
+    if (tenant._count.users > 0) return 'protected' as const;
+    // First, while the tenant's secrets still exist: a hook that fails leaves the tenant for a retry.
+    await this.deletionHooks.run(id);
     const where = { tenantId: id };
-    const [, , , , { count }] = await this.prisma.$transaction([
+    const [, , , , , { count }] = await this.prisma.$transaction([
+      // Its members' own actions; what a SuperAdmin did to it stays in the SuperAdmin's tenant.
+      this.prisma.auditLog.deleteMany({ where }),
       this.prisma.tenantIntegration.deleteMany({ where }),
       this.prisma.apiKey.deleteMany({ where }),
       this.prisma.invitation.deleteMany({ where }),
@@ -56,6 +72,6 @@ export class PrismaTenantRepository implements TenantRepository {
       this.prisma.user.deleteMany({ where }),
       this.prisma.tenant.deleteMany({ where: { id } }),
     ]);
-    return count === 1;
+    return count === 1 ? ('deleted' as const) : ('not_found' as const);
   }
 }

@@ -26,6 +26,8 @@ export async function sendWithResend(email: ResendEmail): Promise<ResendResult> 
       ...(email.idempotencyKey && { 'idempotency-key': email.idempotencyKey }),
     },
     body: JSON.stringify({ from: email.from, to: [email.to], subject: email.subject, text: email.text }),
+    // A hung Resend would otherwise hold a worker slot for undici's 5-minute default; a timeout is retried.
+    signal: AbortSignal.timeout(10_000),
   });
   if (res.ok) return { ok: true, id: ((await res.json()) as { id: string }).id };
   return { ok: false, status: res.status, detail: `Resend answered ${res.status}: ${(await res.text()).slice(0, 300)}` };
