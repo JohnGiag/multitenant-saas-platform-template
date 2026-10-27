@@ -1,16 +1,23 @@
 import { randomBytes } from 'node:crypto';
 import { hash, verify } from '@node-rs/argon2';
-import { IdSchema, RoleSchema, type AuthToken, type Principal, type SignInDto } from '@repo/shared-types';
+import {
+  IdSchema,
+  RoleSchema,
+  TenantTierSchema,
+  type AuthToken,
+  type Principal,
+  type SignInDto,
+} from '@repo/shared-types';
 import { jwtVerify, SignJWT } from 'jose';
 import { z } from 'zod';
 import type { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import type { AuthService } from '../domain/ports/auth.port.js';
 
 const ISSUER = 'enterprise-api-starter';
-// shortcut: no refresh tokens or server-side revocation; role/tenant changes apply when the token expires.
+// shortcut: no refresh tokens or server-side revocation; role/tier changes apply when the token expires.
 const TOKEN_TTL_SECONDS = 15 * 60;
 
-const ClaimsSchema = z.object({ sub: IdSchema, tid: IdSchema, role: RoleSchema });
+const ClaimsSchema = z.object({ sub: IdSchema, tid: IdSchema, role: RoleSchema, tier: TenantTierSchema });
 
 export class LocalAuthAdapter implements AuthService {
   private readonly key: Uint8Array;
@@ -28,12 +35,12 @@ export class LocalAuthAdapter implements AuthService {
   async signIn({ tenantId, email, password }: SignInDto): Promise<AuthToken | null> {
     const user = await this.prisma.user.findUnique({
       where: { tenantId_email: { tenantId, email } },
-      select: { id: true, tenantId: true, role: true, passwordHash: true },
+      select: { id: true, tenantId: true, role: true, passwordHash: true, tenant: { select: { tier: true } } },
     });
     const passwordOk = await verify(user?.passwordHash ?? (await this.dummyHash), password);
     if (!user?.passwordHash || !passwordOk) return null;
 
-    const accessToken = await new SignJWT({ tid: user.tenantId, role: user.role })
+    const accessToken = await new SignJWT({ tid: user.tenantId, role: user.role, tier: user.tenant.tier })
       .setProtectedHeader({ alg: 'HS256' })
       .setSubject(user.id)
       .setIssuer(ISSUER)
@@ -48,7 +55,8 @@ export class LocalAuthAdapter implements AuthService {
       const { payload } = await jwtVerify(token, this.key, { issuer: ISSUER, algorithms: ['HS256'] });
       const claims = ClaimsSchema.safeParse(payload);
       if (!claims.success) return null;
-      return { kind: 'user', id: claims.data.sub, tenantId: claims.data.tid, role: claims.data.role };
+      const { sub, tid, role, tier } = claims.data;
+      return { kind: 'user', id: sub, tenantId: tid, role, tier };
     } catch {
       return null;
     }

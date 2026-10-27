@@ -92,6 +92,7 @@ model ApiKey {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
-  @@index([tenantId, id])
+  // Keyset pagination newest-first over (created_at, id) within a tenant.
+  @@index([tenantId, createdAt, id])
   @@map("api_keys")
 }

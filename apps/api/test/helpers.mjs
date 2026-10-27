@@ -8,6 +8,12 @@ import { PrismaClient } from '../dist/generated/prisma/client.js';
 
 if (existsSync('.env')) process.loadEnvFile();
 
+// Public routes (login) are rate limited per client IP. Each test process sends its own random IP
+// through one trusted proxy hop, so parallel test files and repeated runs never share a bucket.
+process.env.TRUST_PROXY_HOPS = '1';
+export const randomIp = () => `10.${[0, 0, 0].map(() => Math.floor(Math.random() * 256)).join('.')}`;
+const CLIENT_IP = randomIp();
+
 export const PASSWORD = 'correct horse battery staple';
 export const FIXTURES = join(import.meta.dirname, 'fixtures');
 // email (resend), push (fcm), storage (r2) and webhooks (no integration).
@@ -36,8 +42,8 @@ export async function startApp({ optionalModulesDir } = {}) {
   await app.listen(0);
   const base = `http://127.0.0.1:${app.getHttpServer().address().port}/v1`;
 
-  function call(method, path, { token, apiKey, tenant, body } = {}) {
-    const headers = { 'content-type': 'application/json' };
+  function call(method, path, { token, apiKey, tenant, body, ip = CLIENT_IP } = {}) {
+    const headers = { 'content-type': 'application/json', 'x-forwarded-for': ip };
     if (token) headers.authorization = `Bearer ${token}`;
     if (apiKey) headers['x-api-key'] = apiKey;
     if (tenant) headers['x-tenant-id'] = tenant;

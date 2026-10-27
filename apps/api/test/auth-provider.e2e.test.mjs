@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SignJWT } from 'jose';
 import { createApp } from '../dist/app.js';
+import { randomIp } from './helpers.mjs';
 
 async function boot(provider) {
   process.env.AUTH_PROVIDER = provider;
@@ -25,7 +26,7 @@ test('AUTH_PROVIDER=clerk swaps in the Clerk adapter, which fails closed', async
 
     const login = await fetch(`${base}/auth/login`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': randomIp() },
       body: JSON.stringify({ tenantId: crypto.randomUUID(), email: 'a@b.co', password: 'x' }),
     });
     assert.equal(login.status, 401);

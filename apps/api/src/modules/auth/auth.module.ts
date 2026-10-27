@@ -2,6 +2,7 @@ import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
+import { RateLimitModule } from '../rate-limit/rate-limit.module.js';
 import { API_KEY_SERVICE } from './domain/ports/api-key.port.js';
 import { AUTH_SERVICE, type AuthService } from './domain/ports/auth.port.js';
 import { ClerkAuthAdapter } from './infrastructure/clerk-auth.adapter.js';
@@ -22,6 +23,7 @@ function createAuthService(config: ConfigService, prisma: PrismaService): AuthSe
 }
 
 @Module({
+  imports: [RateLimitModule],
   controllers: [AuthController, ApiKeysController],
   providers: [
     { provide: AUTH_SERVICE, inject: [ConfigService, PrismaService], useFactory: createAuthService },

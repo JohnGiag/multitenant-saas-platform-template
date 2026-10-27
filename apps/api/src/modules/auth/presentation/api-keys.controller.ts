@@ -2,23 +2,46 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   Inject,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
-import { CreateApiKeySchema, type CreateApiKeyDto, type CreatedApiKey } from '@repo/shared-types';
+import {
+  CreateApiKeySchema,
+  pageQuery,
+  type ApiKeySummary,
+  type CreateApiKeyDto,
+  type CreatedApiKey,
+  type CursorPage,
+} from '@repo/shared-types';
+import { z } from 'zod';
+import { keysetCursorSchema } from '../../../common/keyset.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { API_KEY_SERVICE, type ApiKeyService } from '../domain/ports/api-key.port.js';
 import { Roles } from './decorators.js';
 
+// Keys are listed by created_at, so the cursor value must be a timestamp.
+const ApiKeyPageQuerySchema = pageQuery(keysetCursorSchema(z.iso.datetime()));
+
 @Controller('api-keys')
 @Roles('TenantAdmin')
 export class ApiKeysController {
   constructor(@Inject(API_KEY_SERVICE) private readonly apiKeys: ApiKeyService) {}
+
+  @Roles('TenantAdmin', 'Auditor')
+  @Get()
+  list(
+    @TenantId() tenantId: string,
+    @Query(new ZodValidationPipe(ApiKeyPageQuerySchema)) query: z.infer<typeof ApiKeyPageQuerySchema>,
+  ): Promise<CursorPage<ApiKeySummary>> {
+    return this.apiKeys.list(tenantId, query);
+  }
 
   @Post()
   create(

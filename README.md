@@ -44,9 +44,21 @@ pnpm --filter @repo/api db:deploy
 ## Auth at a glance
 
 - `POST /v1/auth/login` with `{ tenantId, email, password }` returns a 15-minute JWT. Send it as `Authorization: Bearer <token>`.
-- Headless clients send `X-API-Key: <key>`. A `TenantAdmin` creates keys with `POST /v1/api-keys` (the key is shown once) and revokes them with `DELETE /v1/api-keys/:id`.
+- Headless clients send `X-API-Key: <key>`. A `TenantAdmin` creates keys with `POST /v1/api-keys` (the key is shown once), lists them newest first with `GET /v1/api-keys?cursor=&limit=` (also `Auditor`) and revokes them with `DELETE /v1/api-keys/:id`.
 - `AUTH_PROVIDER=local|clerk` picks the identity provider. The Clerk adapter is still a stub that rejects every token.
 - There is no sign-up endpoint yet: insert the first user directly in the database, with an Argon2id `password_hash`.
+
+## Rate limits
+
+Every route is rate limited with a Redis sliding window over the last 60 seconds. Responses carry `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`; over the limit, the API answers `429` with `Retry-After` (seconds).
+
+| Caller | Bucket | Limit per minute | If Redis is down |
+|---|---|---|---|
+| Signed-in user or API key | per tenant and caller | `free` 120, `pro` 600, `enterprise` 3000 | served, unmetered |
+| Unauthenticated (e.g. login) | per client IP and route | 100 | `503` |
+| Login attempts | per account (tenant + email), from any IP; a successful login resets it | 10 per 15 minutes | `503` |
+
+Behind a load balancer, set `TRUST_PROXY_HOPS` to the number of proxies so the real client IP is used. For Redis high availability, set `REDIS_SENTINELS` and `REDIS_SENTINEL_NAME` instead of `REDIS_URL` (see `.env.example`).
 
 ## Tenants and integrations
 
