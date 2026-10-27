@@ -1,6 +1,6 @@
 # enterprise-api-starter
 
-Multi-tenant SaaS starter: a NestJS API (`apps/api`), shared Zod contracts (`packages/shared-types`) and, later, a Next.js dashboard (`apps/web`). Engineering rules live in [CLAUDE.md](CLAUDE.md).
+Multi-tenant SaaS starter: a NestJS API (`apps/api`), shared Zod contracts (`packages/shared-types`) and a Next.js admin dashboard (`apps/web`). Engineering rules live in [CLAUDE.md](CLAUDE.md).
 
 ## Requirements
 
@@ -13,6 +13,7 @@ Multi-tenant SaaS starter: a NestJS API (`apps/api`), shared Zod contracts (`pac
 pnpm install
 docker compose up -d --wait
 cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env.local
 ```
 
 In `apps/api/.env`, set `JWT_SECRET` (at least 32 characters) and `BYOK_MASTER_KEY` (32 bytes, base64):
@@ -34,13 +35,26 @@ pnpm --filter @repo/api db:deploy
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Builds shared types, then runs the API in watch mode on `PORT` (default 3000) |
+| `pnpm dev` | Builds shared types, then runs the API in watch mode on `PORT` (default 3000) and the dashboard on http://localhost:3001 |
+| `pnpm lint` | Lints the dashboard (ESLint with Next.js and `jsx-a11y` accessibility rules) |
 | `pnpm build` | Builds every package |
 | `pnpm typecheck` | Type-checks every package |
 | `pnpm test` | Builds, then runs all tests. API tests need the database running and `.env` set up |
 | `pnpm coverage` | Same as `pnpm test` for the API, plus a line/branch/function coverage report per source file |
 | `pnpm --filter @repo/api test:live` | Opt-in: sends one real email with `RESEND_PLATFORM_KEY` to Resend's `delivered@resend.dev` test address (no real inbox); with a dev-only full-access key in `RESEND_PLATFORM_FULL_ACCESS_KEY` (never used by the app, not in `.env.example`) also confirms delivery through Resend's API. `pnpm test` never sends real email |
 | `pnpm --filter @repo/api db:migrate` | Creates and applies a migration after a schema change (development) |
+
+## Dashboard (`apps/web`)
+
+Next.js (App Router) with Tailwind CSS and shadcn/ui (Radix), built to WCAG 2.1/2.2 AA.
+
+- **The browser never talks to the API.** Pages are server components and forms are server actions; the dashboard's server calls the API at `API_URL` (`apps/web/.env.local`). The access token lives in an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production), so page scripts cannot read it, and the API needs no CORS. When the token expires (15 minutes) the next request goes back to `/login`.
+- **Pages:** `/login`, `/accept-invitation` and `/reset-password` (the links the API emails out), Overview (tenant, tier, role, installed features), Users and Settings.
+- **Users:** members (change role, remove) and invitations (invite, resend, revoke), each list paged with the API's cursors. `TenantAdmin` and `SuperAdmin` (through the switcher) manage; `Auditor` reads; the `User` role does not see the page. Removing a member or revoking an invitation asks for confirmation first.
+- **Capability-driven settings:** Settings asks `GET /v1/system/capabilities` and shows one tab per installed module that takes a tenant integration. Deleting a module from `apps/api/src/optional/` removes its tab, with no dashboard change. A `TenantAdmin` edits the config, an `Auditor` sees it masked, and `SuperAdmin` and `User` see only General. Known providers (`resend`, `fcm`, `r2`) get a form (`apps/web/src/lib/integration-fields.ts`); a provider from a module added later gets a JSON editor.
+- **Tenant switcher:** a `SuperAdmin` picks the tenant to act on (sent as `X-Tenant-Id`); everyone else sees their own tenant's name.
+- **Local auth only for now:** in Clerk mode, the login page would need Clerk's components. `getToken()` in `apps/web/src/lib/session.ts` is the only place to change.
+- **Rate limits:** sign-in, invitation and reset requests reach the API from the dashboard server's IP, so they share one per-IP bucket (100 per minute). Per-account login limits still apply.
 
 ## Auth at a glance
 

@@ -104,6 +104,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 ## Frontend (`apps/web`)
 
 - Must meet **WCAG 2.1/2.2 AA**: semantic HTML, Radix/shadcn primitives, visible focus, full keyboard operation, labelled form controls, AA colour contrast, and `aria-live` for async status.
+- The browser never calls the API. Server components and server actions call it through `lib/api.ts` (server-only), with the token from the `httpOnly` session cookie. Never expose the token or `API_URL` to client code.
 - Feature settings pages render only when `/v1/system/capabilities` reports the feature.
 - API types and validation come from `packages/shared-types`. Don't duplicate DTOs.
 
