@@ -94,6 +94,13 @@ Behind a load balancer, set `TRUST_PROXY_HOPS` to the number of proxies so the r
 - Failures are retried with exponential backoff (`JOB_ATTEMPTS`, `JOB_BACKOFF_MS`); errors that a retry cannot fix (rejected credentials, unverified sender) skip the retries. Jobs that still fail are copied to the `notifications-dlq` queue with their payload, error and every attempt's stack trace, and stay there for inspection and replay.
 - Every API instance also runs a worker (`WORKER_CONCURRENCY` jobs at a time).
 
+## File storage (optional module `storage`)
+
+- Works with Cloudflare R2 or any S3-compatible store. File bytes never pass through the API: it hands out presigned URLs that are valid for 15 minutes, and clients transfer the files directly to and from the bucket.
+- `POST /v1/storage/uploads` (`TenantAdmin`, `User`) with `{ filename }` answers `201` with `{ key, url, expiresAt }`. The client `PUT`s the bytes to `url`. The key is `<tenantId>/<random>/<filename>`, so uploads never overwrite each other.
+- `GET /v1/storage/downloads?key=` (`TenantAdmin`, `User`, `Auditor`) answers `{ url, expiresAt }`. The file is served as an attachment. A key outside the caller's tenant answers `404`.
+- Each tenant can use its own bucket via `PUT /v1/integrations/r2` with `{ endpoint, bucket, accessKeyId, secretAccessKey, region? }`; `region` defaults to `auto`, which is what R2 uses. Tenants without one use the platform bucket (`STORAGE_*` in `.env`). If neither is configured, the endpoints answer `503`.
+
 ## Tenants and integrations
 
 - Every request acts on the caller's own tenant. A `SuperAdmin` may act on another tenant by sending `X-Tenant-Id: <tenantId>`; anyone else sending a different id gets `403`.
