@@ -16,6 +16,11 @@ process.env.TRUST_PROXY_HOPS = '1';
 export const randomIp = () => `10.${[0, 0, 0].map(() => Math.floor(Math.random() * 256)).join('.')}`;
 const CLIENT_IP = randomIp();
 
+// The offline suite never sends real email: tests stub Resend, and this fake key makes any request a
+// stub misses fail instead of sending. Only test/live/ uses the real RESEND_PLATFORM_KEY.
+process.env.RESEND_PLATFORM_KEY = 're_offline_test_suite';
+process.env.APP_URL = 'https://app.example.test';
+
 // Same idea for queues: each test process has its own, so no worker picks up another file's jobs.
 export const QUEUE_PREFIX = `test-${crypto.randomUUID().slice(0, 8)}`;
 process.env.QUEUE_PREFIX = QUEUE_PREFIX;
@@ -86,8 +91,9 @@ export async function cleanup(apps, tenantIds) {
   }
   const tenantId = { in: tenantIds };
   await db.tenantIntegration.deleteMany({ where: { tenantId } });
+  await db.invitation.deleteMany({ where: { tenantId } });
   await db.apiKey.deleteMany({ where: { tenantId } });
-  // Also removes their push devices (cascade).
+  // Also removes their push devices and password resets (cascade).
   await db.user.deleteMany({ where: { tenantId } });
   await db.tenant.deleteMany({ where: { id: tenantId } });
   await db.$disconnect();

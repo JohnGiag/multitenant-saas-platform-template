@@ -41,3 +41,13 @@ export function planRateLimit(
 export function loginAccountKey(tenantId: string, email: string): string {
   return `rl:login:${tenantId}:${createHash('sha256').update(email).digest('hex')}`;
 }
+
+// Reset requests per account, so nobody can flood a user's inbox. Hashed like the login key.
+export function passwordResetKey(tenantId: string, email: string): string {
+  return `rl:reset:${tenantId}:${createHash('sha256').update(email).digest('hex')}`;
+}
+
+// Guesses at the current password when changing it count like login attempts, per account.
+export function passwordChangeKey(tenantId: string, userId: string): string {
+  return `rl:password:${tenantId}:${userId}`;
+}

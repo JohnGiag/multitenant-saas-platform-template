@@ -11,7 +11,7 @@ import type { Principal, Role } from '@repo/shared-types';
 import { decideAccess } from '../domain/access-policy.js';
 import { API_KEY_SERVICE, type ApiKeyService } from '../domain/ports/api-key.port.js';
 import { AUTH_SERVICE, type AuthService } from '../domain/ports/auth.port.js';
-import { IS_PUBLIC_KEY, ROLES_KEY, type AuthenticatedRequest } from './decorators.js';
+import { IS_PUBLIC_KEY, ROLES_KEY, SELF_SERVICE_KEY, type AuthenticatedRequest } from './decorators.js';
 
 // Registered globally: authenticates every request, then applies the deny-by-default policy.
 @Injectable()
@@ -29,8 +29,9 @@ export class AuthGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
     req.principal = await this.authenticate(req);
     const roles = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES_KEY, targets);
+    const selfService = this.reflector.getAllAndOverride<boolean>(SELF_SERVICE_KEY, targets) ?? false;
 
-    switch (decideAccess(req.principal, roles, req.method)) {
+    switch (decideAccess(req.principal, roles, req.method, selfService)) {
       case 'unauthenticated':
         throw new UnauthorizedException();
       case 'forbidden':

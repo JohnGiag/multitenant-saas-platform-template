@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { hash, verify } from '@node-rs/argon2';
 import {
   IdSchema,
   RoleSchema,
@@ -12,6 +11,7 @@ import { jwtVerify, SignJWT } from 'jose';
 import { z } from 'zod';
 import type { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import type { AuthService } from '../domain/ports/auth.port.js';
+import { hashPassword, verifyPassword } from './password.js';
 
 const ISSUER = 'enterprise-api-starter';
 // shortcut: no refresh tokens or server-side revocation; role/tier changes apply when the token expires.
@@ -22,7 +22,7 @@ const ClaimsSchema = z.object({ sub: IdSchema, tid: IdSchema, role: RoleSchema, 
 export class LocalAuthAdapter implements AuthService {
   private readonly key: Uint8Array;
   // Verified against when the user does not exist, so timing does not reveal registered emails.
-  private readonly dummyHash = hash(randomBytes(16).toString('hex'));
+  private readonly dummyHash = hashPassword(randomBytes(16).toString('hex'));
 
   constructor(
     private readonly prisma: PrismaService,
@@ -37,7 +37,7 @@ export class LocalAuthAdapter implements AuthService {
       where: { tenantId_email: { tenantId, email } },
       select: { id: true, tenantId: true, role: true, passwordHash: true, tenant: { select: { tier: true } } },
     });
-    const passwordOk = await verify(user?.passwordHash ?? (await this.dummyHash), password);
+    const passwordOk = await verifyPassword(user?.passwordHash ?? (await this.dummyHash), password);
     if (!user?.passwordHash || !passwordOk) return null;
 
     const accessToken = await new SignJWT({ tid: user.tenantId, role: user.role, tier: user.tenant.tier })

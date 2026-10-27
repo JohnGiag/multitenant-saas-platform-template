@@ -9,6 +9,7 @@
     "start": "node dist/main.js",
     "typecheck": "prisma generate && tsc --noEmit",
     "test": "node --test \"test/*.test.mjs\"",
+    "test:live": "node --test \"test/live/*.test.mjs\"",
     "coverage": "node --test --experimental-test-coverage --enable-source-maps --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"**/generated/**\" --test-coverage-exclude=\"**/node_modules/**\" \"test/*.test.mjs\"",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy"

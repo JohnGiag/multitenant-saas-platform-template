@@ -15,6 +15,7 @@ import type { OptionalModule } from './modules/system/domain/optional-module.js'
 import { SystemModule } from './modules/system/system.module.js';
 import { TenantContextGuard } from './modules/tenancy/presentation/tenant-context.js';
 import { TenancyModule } from './modules/tenancy/tenancy.module.js';
+import { UsersModule } from './modules/users/users.module.js';
 
 // Optional modules are discovered at startup (see createApp) and never imported here.
 @Module({})
@@ -29,6 +30,7 @@ export class AppModule {
         AuthModule,
         RateLimitModule,
         TenancyModule,
+        UsersModule,
         IntegrationsModule,
         JobsModule,
         NotificationsModule,

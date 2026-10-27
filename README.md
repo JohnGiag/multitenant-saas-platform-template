@@ -39,6 +39,7 @@ pnpm --filter @repo/api db:deploy
 | `pnpm typecheck` | Type-checks every package |
 | `pnpm test` | Builds, then runs all tests. API tests need the database running and `.env` set up |
 | `pnpm coverage` | Same as `pnpm test` for the API, plus a line/branch/function coverage report per source file |
+| `pnpm --filter @repo/api test:live` | Opt-in: sends one real email with `RESEND_PLATFORM_KEY` to Resend's `delivered@resend.dev` test address (no real inbox); with a dev-only full-access key in `RESEND_PLATFORM_FULL_ACCESS_KEY` (never used by the app, not in `.env.example`) also confirms delivery through Resend's API. `pnpm test` never sends real email |
 | `pnpm --filter @repo/api db:migrate` | Creates and applies a migration after a schema change (development) |
 
 ## Auth at a glance
@@ -46,7 +47,20 @@ pnpm --filter @repo/api db:deploy
 - `POST /v1/auth/login` with `{ tenantId, email, password }` returns a 15-minute JWT. Send it as `Authorization: Bearer <token>`.
 - Headless clients send `X-API-Key: <key>`. A `TenantAdmin` creates keys with `POST /v1/api-keys` (the key is shown once), lists them newest first with `GET /v1/api-keys?cursor=&limit=` (also `Auditor`) and revokes them with `DELETE /v1/api-keys/:id`.
 - `AUTH_PROVIDER=local|clerk` picks the identity provider. The Clerk adapter is still a stub that rejects every token.
-- There is no sign-up endpoint yet: insert the first user directly in the database, with an Argon2id `password_hash`.
+- Bootstrapping: insert the first `SuperAdmin` directly in the database (with an Argon2id `password_hash`). From then on, a `SuperAdmin` creates tenants and invites their first `TenantAdmin` through the API (see Users below).
+
+## Users and invitations
+
+Nobody chooses a password for someone else: members join by invitation and set their own.
+
+- `POST /v1/invitations` with `{ email, role? }` (`TenantAdmin`, or a `SuperAdmin` via `X-Tenant-Id`) emails a single-use link to `APP_URL/accept-invitation?token=…`, valid 7 days. The invitee's dashboard posts `{ token, password }` to the public `POST /v1/invitations/accept`, which creates the account. `GET /v1/invitations` lists pending ones (also `Auditor`); `POST /v1/invitations/:id/resend` sends a fresh link (the old one stops working); `DELETE /v1/invitations/:id` revokes. Inviting the same email again replaces the pending invitation.
+- **Who sends the email:** invitations and password resets always use the platform credentials (`RESEND_PLATFORM_KEY`, `RESEND_PLATFORM_FROM`), never a tenant's own Resend integration: whoever controls the sending account can read the link in its logs and accept or reset in the user's place. Tenant Resend integrations are for notifications only. Without the platform key, invitations answer `503`; if the email fails, `502` and no invitation is kept. Only a hash of each token is stored.
+- **Forgotten password:** `POST /v1/auth/password-reset` with `{ tenantId, email }` always answers `202` (it never reveals whether the account exists) and emails a 1-hour link to `APP_URL/reset-password?token=…`; `POST /v1/auth/password-reset/confirm` with `{ token, password }` sets the new password and lifts any login lockout. Requests are limited per account.
+- `GET /v1/users?cursor=&limit=` lists the members of the current tenant (`TenantAdmin`, `Auditor`, or a `SuperAdmin` via `X-Tenant-Id`); `PATCH /v1/users/:id` with `{ role }` changes a role; `DELETE /v1/users/:id` removes a member.
+- No one becomes `SuperAdmin` through the API, `SuperAdmin` accounts cannot be changed or removed through it, and a tenant always keeps at least one `TenantAdmin` (`409` otherwise, also when two admins demote each other at the same moment).
+- `PUT /v1/users/me/password` with `{ currentPassword, newPassword }` changes the caller's own password, for every role including `Auditor`. Wrong guesses count towards the same per-account limit as login. Passwords need at least 12 characters.
+- Role changes and removals take effect when the user's current token expires (at most 15 minutes).
+- Keep `RESEND_PLATFORM_KEY` a **send-only** Resend key: a full-access key can read sent emails, including their invitation and reset links.
 
 ## Rate limits
 

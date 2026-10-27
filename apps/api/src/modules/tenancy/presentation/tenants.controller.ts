@@ -78,7 +78,7 @@ export class TenantsController {
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     const result = await this.tenants.delete(id);
     if (result === 'not_found') throw new NotFoundException();
-    if (result === 'has_data') throw new ConflictException('Tenant still has users, API keys or integrations');
+    if (result === 'has_data') throw new ConflictException('Tenant still has data (users, invitations, API keys, integrations…)');
   }
 
   private found(tenant: Tenant | null): Tenant {

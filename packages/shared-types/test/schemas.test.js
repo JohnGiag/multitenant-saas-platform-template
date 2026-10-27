@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  AcceptInvitationSchema,
   AdminUpdateTenantSchema,
+  ChangePasswordSchema,
+  CreateInvitationSchema,
   CreateTenantSchema,
-  CreateUserSchema,
   IntegrationProviderSchema,
+  PasswordResetConfirmSchema,
   SendNotificationSchema,
   TenantPageQuerySchema,
   UpdateTenantSchema,
+  UpdateUserSchema,
   UpsertTenantIntegrationSchema,
   UserSchema,
 } from '../dist/index.js';
@@ -48,13 +52,27 @@ test('CreateTenant drops a caller-chosen tier', () => {
   assert.equal('tier' in CreateTenantSchema.parse({ name: 'Acme', tier: 'enterprise' }), false);
 });
 
+const password = 'correct horse battery';
+
 test('emails are normalised to lowercase', () => {
-  assert.equal(CreateUserSchema.parse({ email: 'Ada@Example.COM' }).email, 'ada@example.com');
+  assert.equal(CreateInvitationSchema.parse({ email: 'Ada@Example.COM' }).email, 'ada@example.com');
 });
 
-test('SuperAdmin cannot be assigned through CreateUser', () => {
-  assert.equal(CreateUserSchema.safeParse({ email: 'a@b.co', role: 'SuperAdmin' }).success, false);
-  assert.equal(CreateUserSchema.safeParse({ email: 'a@b.co', role: 'TenantAdmin' }).success, true);
+test('SuperAdmin cannot be assigned through user input', () => {
+  assert.equal(CreateInvitationSchema.safeParse({ email: 'a@b.co', role: 'SuperAdmin' }).success, false);
+  assert.equal(CreateInvitationSchema.safeParse({ email: 'a@b.co', role: 'TenantAdmin' }).success, true);
+  assert.equal(UpdateUserSchema.safeParse({ role: 'SuperAdmin' }).success, false);
+  assert.equal(UpdateUserSchema.safeParse({ role: 'Auditor' }).success, true);
+});
+
+test('invitations never carry a password; whoever sets one needs at least 12 characters', () => {
+  assert.equal('password' in CreateInvitationSchema.parse({ email: 'a@b.co', password }), false);
+  for (const schema of [AcceptInvitationSchema, PasswordResetConfirmSchema]) {
+    assert.equal(schema.safeParse({ token: 't', password: 'too short' }).success, false);
+    assert.equal(schema.safeParse({ token: 't', password }).success, true);
+  }
+  assert.equal(ChangePasswordSchema.safeParse({ currentPassword: 'x', newPassword: 'too short' }).success, false);
+  assert.equal(ChangePasswordSchema.safeParse({ currentPassword: 'x', newPassword: password }).success, true);
 });
 
 test('UserSchema strips unknown fields such as passwordHash', () => {

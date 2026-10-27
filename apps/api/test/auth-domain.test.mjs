@@ -31,6 +31,12 @@ test('Auditor is read-only even when listed', () => {
   }
 });
 
+test('self-service routes let an Auditor change its own account, nothing else', () => {
+  assert.equal(decideAccess(as('Auditor'), ['Auditor'], 'PUT', true), 'allow');
+  // Still only for listed roles.
+  assert.equal(decideAccess(as('Auditor'), ['User'], 'PUT', true), 'forbidden');
+});
+
 test('API keys round-trip and reject tampering', () => {
   const key = generateApiKey();
   assert.match(key.raw, /^eak_[0-9a-f]{12}_[A-Za-z0-9_-]{43}$/);

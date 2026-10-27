@@ -34,8 +34,10 @@ model Tenant {
 
   users        User[]
   integrations TenantIntegration[]
-  apiKeys      ApiKey[]
-  pushDevices  PushDevice[]
+  apiKeys        ApiKey[]
+  pushDevices    PushDevice[]
+  invitations    Invitation[]
+  passwordResets PasswordReset[]
 
   @@map("tenants")
 }
@@ -50,8 +52,9 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  pushDevices PushDevice[]
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  pushDevices    PushDevice[]
+  passwordResets PasswordReset[]
 
   @@unique([tenantId, email])
   // UUIDv7 ids are time-ordered, so (tenant_id, id) also serves keyset pagination.
@@ -114,4 +117,40 @@ model PushDevice {
 
   @@index([tenantId, userId])
   @@map("push_devices")
+}
+
+// A pending invitation: the user is created only when they accept it and choose a password.
+model Invitation {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  email     String
+  role      Role     @default(User)
+  // SHA-256 of the single-use token sent by email; the token itself is never stored.
+  tokenHash Bytes    @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  // One pending invitation per email and tenant: inviting again replaces it.
+  @@unique([tenantId, email])
+  @@index([tenantId, id])
+  @@map("invitations")
+}
+
+// A pending password reset; deleted when used or replaced by a newer request.
+model PasswordReset {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash Bytes    @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@map("password_resets")
 }
