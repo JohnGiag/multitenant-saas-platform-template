@@ -1,9 +1,9 @@
 import type { CursorPage, Invitation, User } from '@repo/shared-types';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
+import { Pager } from '@/components/pager';
 import { RoleSelect } from '@/components/role-select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -161,24 +161,5 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-// Keyset pagination only moves forward; "First page" starts over.
-function Pager({ next, first, label }: { next: string | null | undefined; first: string | undefined; label: string }) {
-  if (!next && !first) return null;
-  return (
-    <nav aria-label={`Pages of ${label}`} className="mt-4 flex gap-4 text-sm">
-      {first && (
-        <Link href={first} className="underline underline-offset-4">
-          First page
-        </Link>
-      )}
-      {next && (
-        <Link href={next} className="underline underline-offset-4">
-          Next page
-        </Link>
-      )}
-    </nav>
   );
 }

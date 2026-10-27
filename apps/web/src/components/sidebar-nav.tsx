@@ -1,7 +1,7 @@
 'use client';
 
 import type { Role } from '@repo/shared-types';
-import { LayoutDashboard, Settings, Users } from 'lucide-react';
+import { KeyRound, LayoutDashboard, Settings, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from 'cn';
@@ -10,6 +10,7 @@ import { cn } from 'cn';
 const LINKS: { href: string; label: string; icon: typeof Settings; roles?: Role[] }[] = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
   { href: '/users', label: 'Users', icon: Users, roles: ['SuperAdmin', 'TenantAdmin', 'Auditor'] },
+  { href: '/api-keys', label: 'API keys', icon: KeyRound, roles: ['TenantAdmin', 'Auditor'] },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
