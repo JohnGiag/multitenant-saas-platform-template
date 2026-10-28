@@ -8,7 +8,9 @@ import {
   type CanActivate,
   type ExecutionContext,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedRequest } from '../../auth/presentation/decorators.js';
+import { forwardedClientIp } from '../domain/forwarded-client.js';
 import { RATE_LIMITER, type RateLimiter, type RateLimitResult } from '../domain/ports/rate-limiter.port.js';
 import { planRateLimit } from '../domain/rate-limit-policy.js';
 
@@ -25,15 +27,23 @@ interface RateLimitedRequest extends AuthenticatedRequest {
 export class RateLimitGuard implements CanActivate {
   private readonly logger = new Logger('RateLimit');
 
-  constructor(@Inject(RATE_LIMITER) private readonly limiter: RateLimiter) {}
+  private readonly forwardedIp: (headers: RateLimitedRequest['headers']) => string | null;
+
+  constructor(
+    @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
+    config: ConfigService,
+  ) {
+    this.forwardedIp = forwardedClientIp(config.get<string>('DASHBOARD_PROXY_SECRET') || undefined);
+  }
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const http = ctx.switchToHttp();
     const req = http.getRequest<RateLimitedRequest>();
     const res = http.getResponse<{ setHeader(name: string, value: number): void }>();
-    // req.ip honours TRUST_PROXY_HOPS. Route pattern (/api-keys/:id), so every id shares one bucket.
+    // The browser's IP when the dashboard vouches for it; otherwise req.ip, which honours TRUST_PROXY_HOPS.
+    // Route pattern (/api-keys/:id), so every id shares one bucket.
     const plan = planRateLimit(req.principal ?? null, {
-      ip: req.ip ?? 'unknown',
+      ip: this.forwardedIp(req.headers) ?? req.ip ?? 'unknown',
       method: req.method,
       route: req.route?.path ?? req.path,
     });

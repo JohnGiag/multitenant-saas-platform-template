@@ -7,7 +7,11 @@ const tenants = {};
 const tokens = {};
 let app, call, login;
 
+// The dashboard's secret: with it, the dashboard's forwarded browser IP picks the public-route bucket.
+const DASHBOARD_SECRET = 'test-dashboard-proxy-secret-0123456789';
+
 before(async () => {
+  process.env.DASHBOARD_PROXY_SECRET = DASHBOARD_SECRET;
   tenants.free = await seedTenant('rl-e2e-free', { a: 'User', b: 'User', c: 'User', d: 'User', admin: 'TenantAdmin' });
   tenants.pro = await seedTenant('rl-e2e-pro', { a: 'User' });
   await db.tenant.update({ where: { id: tenants.pro }, data: { tier: 'pro' } });
@@ -93,4 +97,23 @@ test('a successful login clears the account counter', async () => {
   assert.equal((await loginAs('d@example.com', PASSWORD, randomIp())).status, 200);
   // Without the reset, the second of these would already be the 11th attempt and get a 429.
   for (let i = 0; i < LOGIN_ACCOUNT_LIMIT - 1; i++) assert.equal((await fail()).status, 401, `attempt ${i + 1}`);
+});
+
+test("the dashboard's forwarded browser IP picks the bucket, but only with the dashboard's secret", async () => {
+  const [dashboard, browserA, browserB] = [randomIp(), randomIp(), randomIp()];
+  // `ip` is the address the API sees connecting (here: through the test's trusted proxy hop).
+  const login = (ip, extra) =>
+    call('POST', '/auth/login', { ip, headers: extra, body: { email: `nobody-${crypto.randomUUID()}@example.com`, password: 'x' } });
+  const forwarded = (browser, secret = DASHBOARD_SECRET) => ({ 'x-client-ip': browser, 'x-dashboard-secret': secret });
+
+  for (let i = 0; i < PUBLIC_LIMIT; i++) assert.equal((await login(dashboard, forwarded(browserA))).status, 401);
+  assert.equal((await login(dashboard, forwarded(browserA))).status, 429);
+  // Another browser behind the same dashboard has its own bucket, and the dashboard's own is untouched.
+  assert.equal((await login(dashboard, forwarded(browserB))).status, 401);
+  assert.equal((await login(dashboard)).status, 401);
+
+  // browserA itself cannot escape its full bucket by claiming another IP without the secret.
+  const fresh = randomIp();
+  assert.equal((await login(browserA, forwarded(fresh, 'not-the-dashboard-secret-0123456789'))).status, 429);
+  assert.equal((await login(browserA, { 'x-client-ip': fresh })).status, 429);
 });

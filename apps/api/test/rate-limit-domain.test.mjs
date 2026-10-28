@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { decodeKeysetCursor, keysetArgs, keysetCursorSchema, keysetPage } from '../dist/common/keyset.js';
 import { applyTrustProxy } from '../dist/common/trust-proxy.js';
 import { parseSentinels } from '../dist/infrastructure/redis/sentinels.js';
+import { forwardedClientIp } from '../dist/modules/rate-limit/domain/forwarded-client.js';
 import {
   loginAccountKey,
   loginEmailKey,
@@ -105,4 +106,19 @@ test('sentinel list parsing', () => {
   for (const bad of ['a', 'a:0', 'a:70000', 'a:1:2', ':26379']) {
     assert.throws(() => parseSentinels(bad), /REDIS_SENTINELS/, bad);
   }
+});
+
+test('a forwarded client IP is believed only with the dashboard secret', () => {
+  const secret = 'dashboard-proxy-secret-0123456789abcdef';
+  const ipOf = forwardedClientIp(secret);
+  const headers = (ip, given = secret) => ({ 'x-client-ip': ip, 'x-dashboard-secret': given });
+  assert.equal(ipOf(headers('203.0.113.7')), '203.0.113.7');
+  assert.equal(ipOf(headers('2001:db8::1')), '2001:db8::1');
+  assert.equal(ipOf(headers('203.0.113.7', 'wrong')), null);
+  assert.equal(ipOf(headers('203.0.113.7', secret + 'x')), null);
+  assert.equal(ipOf({ 'x-client-ip': '203.0.113.7' }), null);
+  assert.equal(ipOf(headers('not-an-ip')), null);
+  assert.equal(ipOf(headers(['203.0.113.7', '6.6.6.6'])), null);
+  // No secret configured: nothing is believed, whatever is sent.
+  assert.equal(forwardedClientIp(undefined)(headers('203.0.113.7', '')), null);
 });

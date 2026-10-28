@@ -1,12 +1,24 @@
 import 'server-only';
-import type { Capability, CapabilityResponse, Principal, Tenant } from '@repo/shared-types';
+import {
+  CLIENT_IP_HEADER,
+  DASHBOARD_SECRET_HEADER,
+  type Capability,
+  type CapabilityResponse,
+  type Principal,
+  type Tenant,
+} from '@repo/shared-types';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { cache } from 'react';
+import { clientIpFrom, parseProxyHops } from './client-ip';
 import type { FormState } from './form-state';
 import { getTenantOverride, getToken } from './session';
 
 export const API_URL = process.env.API_URL ?? 'http://localhost:3000';
 export const TIMEOUT_MS = 10_000;
+// Read once, so a bad value fails at startup rather than on the first sign-in.
+const PROXY_HOPS = parseProxyHops(process.env.TRUST_PROXY_HOPS);
+const PROXY_SECRET = process.env.DASHBOARD_PROXY_SECRET || undefined;
 
 export class ApiError extends Error {
   constructor(
@@ -24,8 +36,8 @@ interface RequestOptions {
   ownTenant?: boolean;
 }
 
-// shortcut: public routes (login, invitation, password reset) all reach the API from this server's IP, so they
-// share one per-IP rate-limit bucket; forward the client IP through a trusted proxy hop when that is too low.
+// Public routes (login, invitation, password reset) are rate limited per client IP. Every call carries the
+// browser's IP (see forwardedClient); without it, all browsers would share this server's bucket.
 export async function publicApi<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return request<T>(path, options, {});
 }
@@ -43,10 +55,18 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 }
 
-async function request<T>(path: string, { method = 'GET', body }: RequestOptions, headers: Record<string, string>): Promise<T> {
+// The browser's IP, vouched for by the shared secret: the API believes it only with the secret. Sent on every
+// call, so a caller whose session just expired is limited per browser too, not per dashboard.
+async function forwardedClient(): Promise<Record<string, string>> {
+  if (!PROXY_SECRET) return {};
+  const ip = clientIpFrom((await headers()).get('x-forwarded-for'), PROXY_HOPS);
+  return ip ? { [CLIENT_IP_HEADER]: ip, [DASHBOARD_SECRET_HEADER]: PROXY_SECRET } : {};
+}
+
+async function request<T>(path: string, { method = 'GET', body }: RequestOptions, auth: Record<string, string>): Promise<T> {
   const res = await fetch(`${API_URL}/v1${path}`, {
     method,
-    headers: { ...headers, ...(body !== undefined && { 'content-type': 'application/json' }) },
+    headers: { ...(await forwardedClient()), ...auth, ...(body !== undefined && { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: 'no-store',
     signal: AbortSignal.timeout(TIMEOUT_MS),

@@ -66,8 +66,8 @@ export async function startApp({ optionalModulesDir } = {}) {
   await app.listen(0);
   const base = `http://127.0.0.1:${app.getHttpServer().address().port}/v1`;
 
-  function call(method, path, { token, apiKey, tenant, body, ip = CLIENT_IP } = {}) {
-    const headers = { 'content-type': 'application/json', 'x-forwarded-for': ip };
+  function call(method, path, { token, apiKey, tenant, body, ip = CLIENT_IP, headers: extra } = {}) {
+    const headers = { 'content-type': 'application/json', 'x-forwarded-for': ip, ...extra };
     if (token) headers.authorization = `Bearer ${token}`;
     if (apiKey) headers['x-api-key'] = apiKey;
     if (tenant) headers['x-tenant-id'] = tenant;

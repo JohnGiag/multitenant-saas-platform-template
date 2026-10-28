@@ -29,6 +29,12 @@ test('env validation rejects an unknown AUTH_PROVIDER before anything starts', (
   assert.throws(() => validateEnv({ AUTH_PROVIDER: 'clerck' }), /Unknown AUTH_PROVIDER "clerck"/);
 });
 
+test('a dashboard proxy secret, when set, must be long enough', () => {
+  assert.doesNotThrow(() => validateEnv({ DASHBOARD_PROXY_SECRET: '' }));
+  assert.doesNotThrow(() => validateEnv({ DASHBOARD_PROXY_SECRET: 'x'.repeat(32) }));
+  assert.throws(() => validateEnv({ DASHBOARD_PROXY_SECRET: 'short' }), /DASHBOARD_PROXY_SECRET/);
+});
+
 test('Clerk mode needs its issuer and webhook secret before anything starts', () => {
   const clerk = { AUTH_PROVIDER: 'clerk', CLERK_ISSUER: 'https://x.clerk.accounts.dev', CLERK_WEBHOOK_SECRET: 'whsec_abc' };
   assert.doesNotThrow(() => validateEnv(clerk));

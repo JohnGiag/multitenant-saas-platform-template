@@ -10,3 +10,8 @@ export type TenantTier = z.infer<typeof TenantTierSchema>;
 export const IdSchema = z.uuid();
 export const TimestampSchema = z.iso.datetime();
 export const EmailSchema = z.email().max(254).toLowerCase();
+
+// The dashboard's server calls the API on behalf of browsers: it forwards each browser's IP in
+// CLIENT_IP_HEADER, proven by DASHBOARD_PROXY_SECRET in DASHBOARD_SECRET_HEADER (see the API's RateLimitGuard).
+export const CLIENT_IP_HEADER = 'x-client-ip';
+export const DASHBOARD_SECRET_HEADER = 'x-dashboard-secret';

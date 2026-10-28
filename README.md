@@ -114,7 +114,9 @@ Every route is rate limited with a Redis sliding window over the last 60 seconds
 | Unauthenticated (e.g. login) | per client IP and route | 100 | `503` |
 | Login attempts | per email (any tenant) when signing in with email and password; per account (tenant + email) when a `tenantId` is sent. From any IP; a successful login resets it | 10 per 15 minutes | `503` |
 
-Behind a load balancer, set `TRUST_PROXY_HOPS` to the number of proxies so the real client IP is used. For Redis high availability, set `REDIS_SENTINELS` and `REDIS_SENTINEL_NAME` instead of `REDIS_URL` (see `.env.example`).
+Behind a load balancer, set `TRUST_PROXY_HOPS` to the number of proxies so the real client IP is used.
+
+The dashboard calls public routes (sign-in, invitations, password resets) from its own server, so the API would see one IP for every browser. To limit per browser instead, set the same `DASHBOARD_PROXY_SECRET` (at least 32 characters) in both apps, and in `apps/web` set `TRUST_PROXY_HOPS` to the number of proxies in front of the dashboard. The dashboard then sends each browser's IP in `X-Client-Ip` with the secret in `X-Dashboard-Secret`, and the API believes that IP only when the secret matches. With no proxy in front of the dashboard (`0`, the default) nothing is forwarded, because a browser can write `X-Forwarded-For` itself. For Redis high availability, set `REDIS_SENTINELS` and `REDIS_SENTINEL_NAME` instead of `REDIS_URL` (see `.env.example`).
 
 ## Notifications and background jobs
 
