@@ -10,6 +10,9 @@ const CHANNEL = 'notifications:sse';
 const HEARTBEAT_MS = 25_000;
 // Enough for several tabs, devices and a reconnect overlap. Per instance: the count lives in memory.
 export const MAX_STREAMS_PER_USER = 5;
+// The sign-in is checked when a stream opens, so a stream is closed after a local access token's lifetime: the
+// browser reconnects on its own, and has to sign in again if the session is gone (or the user removed).
+export const MAX_STREAM_MS = 15 * 60_000;
 
 interface SseMessage {
   tenantId: string;
@@ -92,8 +95,10 @@ export class SseHub implements OnModuleInit, OnModuleDestroy {
       if (open.length > MAX_STREAMS_PER_USER) open[0]!.replace();
 
       const heartbeat = interval(HEARTBEAT_MS).subscribe(() => subscriber.next({ type: 'ping', data: '' }));
+      const lifetime = setTimeout(() => subscriber.complete(), MAX_STREAM_MS);
       return () => {
         heartbeat.unsubscribe();
+        clearTimeout(lifetime);
         open.splice(open.indexOf(stream), 1);
         if (open.length === 0) this.streams.delete(key);
       };

@@ -42,8 +42,9 @@ export class RateLimitGuard implements CanActivate {
     const res = http.getResponse<{ setHeader(name: string, value: number): void }>();
     // The browser's IP when the dashboard vouches for it; otherwise req.ip, which honours TRUST_PROXY_HOPS.
     // Route pattern (/api-keys/:id), so every id shares one bucket.
+    req.clientIp = this.forwardedIp(req.headers) ?? req.ip ?? 'unknown';
     const plan = planRateLimit(req.principal ?? null, {
-      ip: this.forwardedIp(req.headers) ?? req.ip ?? 'unknown',
+      ip: req.clientIp,
       method: req.method,
       route: req.route?.path ?? req.path,
     });

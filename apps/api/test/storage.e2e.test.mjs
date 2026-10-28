@@ -14,14 +14,18 @@ Object.assign(process.env, {
 });
 delete process.env.STORAGE_REGION;
 
-// The API's own requests to the platform bucket (deletions) are recorded, not sent.
+// The API's own requests to the platform bucket are recorded, not sent: deletions, and HEADs (answered 200 for
+// the keys in `uploaded`, 404 for the rest).
 const deleted = [];
+const uploaded = new Set();
 const realFetch = globalThis.fetch;
 globalThis.fetch = (input, init) => {
   const url = new URL(String(input));
   if (url.origin !== PLATFORM) return realFetch(input, init);
+  const key = decodeURIComponent(url.pathname.replace('/platform-bucket/', ''));
+  if (init?.method === 'HEAD') return Promise.resolve(new Response(null, { status: uploaded.has(key) ? 200 : 404 }));
   assert.equal(init?.method, 'DELETE');
-  deleted.push(decodeURIComponent(url.pathname.replace('/platform-bucket/', '')));
+  deleted.push(key);
   return Promise.resolve(new Response(null, { status: 204 }));
 };
 
@@ -117,6 +121,33 @@ test('the platform bucket has a quota per tenant; deleting files frees it', asyn
   assert.ok(deleted.includes(filler), 'the file was not deleted from the bucket');
   assert.equal(await db.storageObject.count({ where: { key: filler } }), 0);
   assert.equal((await upload(tokens.userB, 'b.txt', 101)).status, 201);
+});
+
+test('a reservation whose upload never happened frees its quota once it is old, if the tenant needs it', async () => {
+  await db.storageObject.deleteMany({ where: { tenantId: tenants.b } });
+  const uploaderId = (await db.user.findFirstOrThrow({ where: { tenantId: tenants.b } })).id;
+  const old = new Date(Date.now() - 60 * 60_000);
+  const reserve = (name, createdAt) => {
+    const key = `${tenants.b}/${crypto.randomUUID()}/${name}`;
+    return db.storageObject.create({ data: { tenantId: tenants.b, key, size: PLATFORM_QUOTA.bytes / 2, uploaderId, createdAt } });
+  };
+  const abandoned = await reserve('abandoned.bin', old);
+  const sent = await reserve('sent.bin', old);
+  uploaded.add(sent.key);
+
+  // Full: the old reservation without a file is released, the old one with a file stays.
+  assert.equal((await upload(tokens.userB, 'next.bin', 100)).status, 201);
+  assert.equal(await db.storageObject.count({ where: { key: abandoned.key } }), 0);
+  assert.equal(await db.storageObject.count({ where: { key: sent.key } }), 1);
+
+  // A fresh reservation may still be uploaded to, so it is never released.
+  await db.storageObject.deleteMany({ where: { tenantId: tenants.b } });
+  const fresh = await reserve('fresh.bin', new Date());
+  await reserve('fresh2.bin', new Date());
+  assert.equal((await upload(tokens.userB, 'next.bin', 100)).status, 409);
+  assert.equal(await db.storageObject.count({ where: { key: fresh.key } }), 1);
+  uploaded.clear();
+  await db.storageObject.deleteMany({ where: { tenantId: tenants.b } });
 });
 
 test('concurrent uploads cannot both take the last free space', async () => {

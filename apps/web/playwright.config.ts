@@ -4,6 +4,8 @@ import { defineConfig, devices } from '@playwright/test';
 // .env files say: Clerk mode needs a live Clerk instance. Own ports, so dev servers on 3000/3001 can keep running.
 const API_PORT = 3100;
 const WEB_PORT = 3101;
+// Shared by both servers: `next start` refuses to run in production without it.
+const PROXY_SECRET = 'e2e-dashboard-proxy-secret-0123456789abcdef';
 
 export default defineConfig({
   testDir: './e2e',
@@ -25,7 +27,7 @@ export default defineConfig({
       command: 'node dist/main.js',
       cwd: '../api',
       url: `http://localhost:${API_PORT}/v1/auth/me`,
-      env: { PORT: String(API_PORT), AUTH_PROVIDER: 'local' },
+      env: { PORT: String(API_PORT), AUTH_PROVIDER: 'local', DASHBOARD_PROXY_SECRET: PROXY_SECRET },
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },
@@ -39,6 +41,7 @@ export default defineConfig({
         AUTH_PROVIDER: 'local',
         API_URL: `http://localhost:${API_PORT}`,
         TRUST_PROXY_HOPS: '0',
+        DASHBOARD_PROXY_SECRET: PROXY_SECRET,
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: '',
         CLERK_SECRET_KEY: '',
       },

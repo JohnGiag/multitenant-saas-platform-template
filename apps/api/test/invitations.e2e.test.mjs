@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { after, before, beforeEach, test } from 'node:test';
 import { LOGIN_ACCOUNT_LIMIT } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
-import { cleanup, db, PASSWORD, seedTenant, seedUser, startApp, waitFor } from './helpers.mjs';
+import { cleanup, db, PASSWORD, randomIp, seedTenant, seedUser, startApp, waitFor } from './helpers.mjs';
 
 const NEW_PASSWORD = 'my very own passphrase';
 const emails = [];
@@ -203,6 +203,24 @@ test('an expired reset link is refused', async () => {
   await waitFor(() => emails.length === 1);
   await db.passwordReset.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
   assert.equal((await confirmReset(tokenIn(emails[0]))).status, 400);
+});
+
+test("a stranger's reset requests cannot block the owner's, and expired links of the tenant are cleaned up", async () => {
+  const email = await seedUser(tenants.a, { role: 'Auditor' });
+  const request = (ip) => call('POST', '/auth/password-reset', { body: { email }, ip });
+  const stranger = randomIp();
+  for (let i = 0; i < LOGIN_ACCOUNT_LIMIT; i++) assert.equal((await request(stranger)).status, 202);
+  assert.equal((await request(stranger)).status, 429);
+  assert.equal((await request(randomIp())).status, 202);
+
+  const other = await db.user.findFirstOrThrow({ where: { tenantId: tenants.a, email: { not: email } } });
+  const stale = await db.passwordReset.create({
+    data: { tenantId: tenants.a, userId: other.id, tokenHash: crypto.getRandomValues(new Uint8Array(32)), expiresAt: new Date(Date.now() - 1000) },
+  });
+  assert.equal((await request(randomIp())).status, 202);
+  await waitFor(async () => (await db.passwordReset.count({ where: { id: stale.id } })) === 0);
+  // Its 12 accepted requests each mail the owner; wait for them all, so none lands in the next test.
+  await waitFor(() => emails.length === LOGIN_ACCOUNT_LIMIT + 2);
 });
 
 test('an email with accounts in several tenants gets one link per account, each naming its tenant', async () => {

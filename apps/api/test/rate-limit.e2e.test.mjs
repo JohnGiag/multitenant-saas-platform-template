@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { LOGIN_ACCOUNT_LIMIT, PUBLIC_LIMIT, TIER_LIMITS } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
+import { LOGIN_ACCOUNT_LIMIT, LOGIN_CEILING_LIMIT, PUBLIC_LIMIT, TIER_LIMITS } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
 import { cleanup, db, PASSWORD, randomIp, seedTenant, startApp } from './helpers.mjs';
 
 const tenants = {};
@@ -78,23 +78,29 @@ test('login is limited per client IP, even with the right password', async () =>
   assert.equal((await loginAs('a@example.com', PASSWORD, randomIp())).status, 200);
 });
 
-test('login is limited per account across IPs, even with the right password', async () => {
-  for (let i = 0; i < LOGIN_ACCOUNT_LIMIT; i++) {
-    assert.equal((await loginAs('c@example.com', 'wrong', randomIp())).status, 401);
-  }
-  const blocked = await loginAs('c@example.com', PASSWORD, randomIp());
+test("login is limited per account and IP, so a stranger's guesses cannot lock the owner out", async () => {
+  const stranger = randomIp();
+  for (let i = 0; i < LOGIN_ACCOUNT_LIMIT; i++) assert.equal((await loginAs('c@example.com', 'wrong', stranger)).status, 401);
+  const blocked = await loginAs('c@example.com', PASSWORD, stranger);
   assert.equal(blocked.status, 429);
   const retryAfter = header(blocked, 'retry-after');
   assert.ok(retryAfter >= 1 && retryAfter <= 15 * 60, `Retry-After ${retryAfter}`);
 
-  // Other accounts in the same tenant are unaffected.
-  assert.equal((await loginAs('b@example.com', PASSWORD, randomIp())).status, 200);
+  // The owner, from another address, still gets in; so do other accounts from the blocked address.
+  assert.equal((await loginAs('c@example.com', PASSWORD, randomIp())).status, 200);
+  assert.equal((await loginAs('b@example.com', PASSWORD, stranger)).status, 200);
 });
 
-test('a successful login clears the account counter', async () => {
-  const fail = () => loginAs('d@example.com', 'wrong', randomIp());
+test('login is limited per account across IPs at a higher ceiling, even with the right password', async () => {
+  for (let i = 0; i < LOGIN_CEILING_LIMIT; i++) assert.equal((await loginAs('e@example.com', 'wrong', randomIp())).status, 401);
+  assert.equal((await loginAs('e@example.com', PASSWORD, randomIp())).status, 429);
+});
+
+test("a successful login clears this IP's account counter", async () => {
+  const ip = randomIp();
+  const fail = () => loginAs('d@example.com', 'wrong', ip);
   for (let i = 0; i < LOGIN_ACCOUNT_LIMIT - 1; i++) assert.equal((await fail()).status, 401);
-  assert.equal((await loginAs('d@example.com', PASSWORD, randomIp())).status, 200);
+  assert.equal((await loginAs('d@example.com', PASSWORD, ip)).status, 200);
   // Without the reset, the second of these would already be the 11th attempt and get a 429.
   for (let i = 0; i < LOGIN_ACCOUNT_LIMIT - 1; i++) assert.equal((await fail()).status, 401, `attempt ${i + 1}`);
 });

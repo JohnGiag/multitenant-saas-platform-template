@@ -159,6 +159,8 @@ model ClerkDeletion {
   clerkId   String   @unique @map("clerk_id")
   deletedAt DateTime @map("deleted_at") @db.Timestamptz(3)
 
+  // Old tombstones are deleted as new ones are written.
+  @@index([deletedAt])
   @@map("clerk_deletions")
 }
 

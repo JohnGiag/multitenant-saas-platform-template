@@ -18,6 +18,8 @@ const ClerkUserSchema = z.object({
   email_addresses: z.array(z.object({ id: z.string(), email_address: z.string() })),
 });
 
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 const membershipId = (orgId: string, userId: string) => `${orgId}/${userId}`;
 
 // Mirrors Clerk into our tenants and users (Clerk is where they are created and removed).
@@ -128,15 +130,17 @@ export class ClerkWebhookHandler {
     const primary = email_addresses.find((address) => address.id === primary_email_address_id);
     const email = EmailSchema.safeParse(primary?.email_address);
     if (!email.success) return;
-    try {
-      await this.prisma.user.updateMany({ where: { clerkUserId: id }, data: { email: email.data } });
-    } catch (error) {
-      // Another member of one of their tenants already has that email: keep the old one there.
-      if (hasCode(error, 'P2002')) {
-        this.logger.warn(`Email change of Clerk user ${id} skipped: the address is taken in one of their tenants`);
-        return;
+    // One member at a time: a single updateMany would fail as a whole on one clash, in every tenant.
+    const members = await this.prisma.user.findMany({ where: { clerkUserId: id }, select: { id: true } });
+    for (const member of members) {
+      try {
+        await this.prisma.user.update({ where: { id: member.id }, data: { email: email.data } });
+      } catch (error) {
+        // Another member of that tenant already has the email: keep the old one there. Gone since: nothing to do.
+        if (hasCode(error, 'P2002')) {
+          this.logger.warn(`Email change of Clerk user ${id} skipped in one tenant: the address is taken there`);
+        } else if (!hasCode(error, 'P2025')) throw error;
       }
-      throw error;
     }
   }
 
@@ -147,6 +151,8 @@ export class ClerkWebhookHandler {
       data: { deletedAt: at },
     });
     if (count === 0) await this.prisma.clerkDeletion.createMany({ data: { clerkId, deletedAt: at }, skipDuplicates: true });
+    // Svix stops retrying long before this, so older tombstones guard against nothing.
+    await this.prisma.clerkDeletion.deleteMany({ where: { deletedAt: { lt: new Date(Date.now() - TOMBSTONE_TTL_MS) } } });
   }
 
   private async deletedSince(at: Date, ...clerkIds: string[]) {

@@ -10,9 +10,18 @@ export const TIER_LIMITS: Record<TenantTier, number> = { free: 120, pro: 600, en
 // for a whole office behind one NAT address; accounts are protected by the per-account login limit.
 export const PUBLIC_LIMIT = 100;
 
-// Login attempts per account, from any IP: stops password guessing spread across many addresses.
+// Password attempts per account and client IP. A stranger's guesses lock only their own address out,
+// so they cannot lock the account's owner out.
 export const LOGIN_ACCOUNT_LIMIT = 10;
 export const LOGIN_ACCOUNT_WINDOW_MS = 15 * 60_000;
+// Per account from all IPs together: stops password guessing spread across many addresses, while staying
+// far above what one person typing can reach.
+export const LOGIN_CEILING_LIMIT = 100;
+// Reset requests per email from all IPs together (the per-IP limit above also applies).
+export const RESET_CEILING_LIMIT = 30;
+
+// An account's bucket for one client IP.
+export const perIp = (key: string, ip: string) => `${key}:ip:${ip}`;
 
 export interface RateLimitPlan {
   key: string;

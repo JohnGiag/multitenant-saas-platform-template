@@ -32,7 +32,10 @@ export class PrismaPasswordResetService implements PasswordResetService {
         const { token, hash } = newOneTimeToken();
         // Only the newest link works.
         await this.prisma.$transaction([
-          this.prisma.passwordReset.deleteMany({ where: { tenantId: user.tenantId, userId: user.id } }),
+          // This account's older links (only the newest works), and any other expired ones of its tenant.
+          this.prisma.passwordReset.deleteMany({
+            where: { tenantId: user.tenantId, OR: [{ userId: user.id }, { expiresAt: { lte: new Date() } }] },
+          }),
           this.prisma.passwordReset.create({
             data: { tenantId: user.tenantId, userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS) },
           }),

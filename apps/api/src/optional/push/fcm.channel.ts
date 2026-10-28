@@ -49,7 +49,7 @@ export class FcmChannel implements NotificationChannel, OnModuleInit {
     // shortcut: a retry after a partial failure re-sends to devices that already got it (FCM has no
     // idempotency key); split into one job per device if duplicates matter.
     for (const { token } of devices) {
-      const res = await fetch(`https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`, {
+      const res = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(account.project_id)}/messages:send`, {
         method: 'POST',
         headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
         body: JSON.stringify({

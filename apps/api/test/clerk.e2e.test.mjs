@@ -215,6 +215,19 @@ test('email changes follow the Clerk user; leaving an organization or deleting t
   assert.equal(await db.user.count({ where: { clerkUserId: dee } }), 0);
 });
 
+test('an email already taken in one tenant skips the change there only', async () => {
+  const eli = clerkUser('eli');
+  await webhook('organizationMembership.created', membership(org('free'), eli, 'eli@example.com'));
+  await webhook('organizationMembership.created', membership(org('taken'), eli, 'eli@example.com'));
+  const taken = await db.tenant.findUniqueOrThrow({ where: { clerkOrgId: org('taken') } });
+  await db.user.create({ data: { tenantId: taken.id, email: 'eli.new@example.com' } });
+
+  const updated = { id: eli, primary_email_address_id: 'idn_2', email_addresses: [{ id: 'idn_2', email_address: 'eli.new@example.com' }] };
+  assert.equal(await webhook('user.updated', updated), 204);
+  assert.equal((await memberOf(org('free'), eli)).email, 'eli.new@example.com');
+  assert.equal((await memberOf(org('taken'), eli)).email, 'eli@example.com');
+});
+
 test('organization updates rename the tenant; deleting it removes the tenant and its data', async () => {
   await webhook('organization.created', { id: org('gone'), name: 'Gone Soon' });
   await webhook('organization.updated', { id: org('gone'), name: 'Renamed' });

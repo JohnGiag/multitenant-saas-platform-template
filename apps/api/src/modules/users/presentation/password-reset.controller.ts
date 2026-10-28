@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, HttpCode, Inject, Logger, Post, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, Inject, Logger, Post, Req, Res } from '@nestjs/common';
 import {
   PasswordResetConfirmSchema,
   PasswordResetRequestSchema,
@@ -7,9 +7,9 @@ import {
 } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { Public } from '../../auth/presentation/decorators.js';
+import { Public, type AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
-import { loginAccountKey, loginEmailKey, passwordResetKey } from '../../rate-limit/domain/rate-limit-policy.js';
+import { loginAccountKey, loginEmailKey, passwordResetKey, RESET_CEILING_LIMIT } from '../../rate-limit/domain/rate-limit-policy.js';
 import { clearAccountAttempts, countAccountAttempt } from '../../rate-limit/presentation/account-attempts.js';
 import { PASSWORD_RESET_SERVICE, type PasswordResetService } from '../domain/ports/password-reset.service.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
@@ -35,9 +35,10 @@ export class PasswordResetController {
   @HttpCode(202)
   async request(
     @Body(new ZodValidationPipe(PasswordResetRequestSchema)) { email }: PasswordResetRequestDto,
+    @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: { setHeader(name: string, value: number): void },
   ): Promise<void> {
-    await countAccountAttempt(this.limiter, passwordResetKey(email), res);
+    await countAccountAttempt(this.limiter, passwordResetKey(email), req.clientIp!, RESET_CEILING_LIMIT, res);
     // shortcut: in-process, not queued (the token must not sit in Redis); a crash before sending loses
     // the email and the user simply asks again.
     void this.resets.request(email).catch((err: unknown) =>
@@ -52,11 +53,15 @@ export class PasswordResetController {
   @HttpCode(204)
   async confirm(
     @Body(new ZodValidationPipe(PasswordResetConfirmSchema)) { token, password }: PasswordResetConfirmDto,
+    @Req() req: AuthenticatedRequest,
   ): Promise<void> {
     const result = await this.resets.confirm(token, password);
     if (result === 'invalid') throw new BadRequestException('This reset link is invalid or has expired');
-    // A user locked out by failed logins can sign in again with the new password, either way.
-    await clearAccountAttempts(this.limiter, loginAccountKey(result.tenantId, result.email));
-    await clearAccountAttempts(this.limiter, loginEmailKey(result.email));
+    // A user locked out by failed logins can sign in again with the new password, either way: the lockout of
+    // this IP and the all-IPs ceiling (the owner proved themselves with the emailed token).
+    for (const key of [loginAccountKey(result.tenantId, result.email), loginEmailKey(result.email)]) {
+      await clearAccountAttempts(this.limiter, key, req.clientIp!);
+      await clearAccountAttempts(this.limiter, key);
+    }
   }
 }

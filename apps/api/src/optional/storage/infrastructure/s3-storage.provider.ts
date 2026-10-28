@@ -23,6 +23,9 @@ import {
 import { presignS3Url } from './sigv4.js';
 
 const URL_TTL_SECONDS = 15 * 60;
+// A reservation older than this can no longer be uploaded to (its URL has expired, with time to finish a
+// transfer that started before), so a missing object means the upload never happened.
+const ABANDONED_AFTER_MS = 2 * URL_TTL_SECONDS * 1000;
 
 // Tenant config (PUT /v1/integrations/r2), or the platform's STORAGE_* variables. R2's region is "auto".
 const StorageConfigSchema = z.object({
@@ -117,16 +120,47 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   private async reserve(tenantId: string, file: { key: string; size: number; uploaderId: string }): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    // Reservations whose upload never happened would otherwise hold quota forever: freed only when it is full.
+    if (await this.tryReserve(tenantId, file)) return;
+    if ((await this.releaseAbandoned(tenantId)) > 0 && (await this.tryReserve(tenantId, file))) return;
+    throw new StorageQuotaExceededError('Storage quota reached: delete files or configure your own bucket');
+  }
+
+  private async tryReserve(tenantId: string, file: { key: string; size: number; uploaderId: string }): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
       // Serializes a tenant's concurrent uploads, so two cannot both take the last free space. NO KEY: plain
       // FOR UPDATE would also block every insert that references the tenant (audit logs, API keys, ...).
       await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId}::uuid FOR NO KEY UPDATE`;
       const used = await tx.storageObject.aggregate({ where: { tenantId }, _sum: { size: true }, _count: true });
-      if (!fitsPlatformQuota({ bytes: used._sum.size ?? 0, objects: used._count }, file.size)) {
-        throw new StorageQuotaExceededError('Storage quota reached: delete files or configure your own bucket');
-      }
+      if (!fitsPlatformQuota({ bytes: used._sum.size ?? 0, objects: used._count }, file.size)) return false;
       await tx.storageObject.create({ data: { tenantId, ...file } });
+      return true;
     });
+  }
+
+  // Frees the tenant's old reservations that the bucket does not hold; returns how many. A bucket that does not
+  // answer leaves a reservation alone. At most PLATFORM_QUOTA.objects rows, a few requests at a time.
+  private async releaseAbandoned(tenantId: string): Promise<number> {
+    const old = await this.prisma.storageObject.findMany({
+      where: { tenantId, createdAt: { lt: new Date(Date.now() - ABANDONED_AFTER_MS) } },
+      select: { key: true },
+    });
+    let released = 0;
+    for (let i = 0; i < old.length; i += 10) {
+      const missing = await Promise.all(old.slice(i, i + 10).map(({ key }) => this.isMissingFromPlatform(key)));
+      const keys = old.slice(i, i + 10).filter((_, j) => missing[j]).map(({ key }) => key);
+      released += (await this.prisma.storageObject.deleteMany({ where: { tenantId, key: { in: keys } } })).count;
+    }
+    return released;
+  }
+
+  private async isMissingFromPlatform(key: string): Promise<boolean> {
+    try {
+      const res = await fetch(sign(this.platformBucket(), 'HEAD', key).url, { method: 'HEAD', signal: AbortSignal.timeout(10_000) });
+      return res.status === 404;
+    } catch {
+      return false;
+    }
   }
 
   private async deleteFromPlatform(key: string): Promise<void> {
@@ -165,7 +199,7 @@ function assertTenantKey(tenantId: string, key: string): void {
 
 function sign(
   { endpoint, region, bucket, accessKeyId, secretAccessKey }: StorageConfig,
-  method: 'GET' | 'PUT' | 'DELETE',
+  method: 'GET' | 'PUT' | 'HEAD' | 'DELETE',
   key: string,
   extra: { query?: Record<string, string>; headers?: Record<string, string> } = {},
 ): PresignedUrl {

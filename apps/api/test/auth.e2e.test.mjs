@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { SignJWT } from 'jose';
-import { LOGIN_ACCOUNT_LIMIT } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
+import { LOGIN_ACCOUNT_LIMIT, LOGIN_CEILING_LIMIT } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
 import { cleanup, db, PASSWORD, randomIp, seedTenant, seedUser, startApp } from './helpers.mjs';
 
 const tenants = {};
@@ -129,13 +129,21 @@ test('only tenants whose account accepts the password are offered, and nothing w
   assert.equal((await signIn({ email: `nobody-${crypto.randomUUID()}@example.com`, password: PASSWORD })).status, 401);
 });
 
-test('sign-in by email alone is limited per email, across IPs and tenants', async () => {
+test('sign-in by email alone is limited per email and IP across tenants, and per email at a ceiling', async () => {
   const email = await seedUser(tenants.a);
   await seedUser(tenants.b, { email });
-  for (let i = 0; i < LOGIN_ACCOUNT_LIMIT; i++) await signIn({ email, password: 'wrong password' }, randomIp());
-  const blocked = await signIn({ email, password: PASSWORD }, randomIp());
+  const stranger = randomIp();
+  for (let i = 0; i < LOGIN_ACCOUNT_LIMIT; i++) await signIn({ email, password: 'wrong password' }, stranger);
+  const blocked = await signIn({ email, password: PASSWORD }, stranger);
   assert.equal(blocked.status, 429);
   assert.ok(Number(blocked.headers.get('retry-after')) > 0);
+  // The owner, from another address, is not locked out by the stranger.
+  assert.equal((await signIn({ email, password: 'wrong password' }, randomIp())).status, 401);
+
+  // Spread over many addresses, guessing still hits the ceiling.
+  const spread = await seedUser(tenants.a);
+  for (let i = 0; i < LOGIN_CEILING_LIMIT; i++) await signIn({ email: spread, password: 'wrong password' }, randomIp());
+  assert.equal((await signIn({ email: spread, password: PASSWORD }, randomIp())).status, 429);
   // Another email is unaffected.
   assert.equal((await signIn({ email: await seedUser(tenants.a), password: PASSWORD }, randomIp())).status, 200);
 });

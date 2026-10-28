@@ -169,7 +169,7 @@ Each app reads its own env file: `apps/api/.env` and `apps/web/.env.local`. Both
 | `AUTH_PROVIDER` | | The same value as the API's |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Clerk mode | The secret key stays on the dashboard's server |
 | `TRUST_PROXY_HOPS` | | Number of proxies in front of the dashboard. Default `0` |
-| `DASHBOARD_PROXY_SECRET` | | The API's value, the same one |
+| `DASHBOARD_PROXY_SECRET` | production | The API's value, the same one. The dashboard refuses to start in production without it |
 
 > [!NOTE]
 > Set `AUTH_PROVIDER` and the Clerk keys when **building** the dashboard too: Next.js bakes `NEXT_PUBLIC_*` values and static pages in at build time.

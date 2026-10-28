@@ -9,6 +9,7 @@ import {
   loginAccountKey,
   loginEmailKey,
   passwordResetKey,
+  perIp,
   PUBLIC_LIMIT,
   planRateLimit,
   TIER_LIMITS,
@@ -121,4 +122,11 @@ test('a forwarded client IP is believed only with the dashboard secret', () => {
   assert.equal(ipOf(headers(['203.0.113.7', '6.6.6.6'])), null);
   // No secret configured: nothing is believed, whatever is sent.
   assert.equal(forwardedClientIp(undefined)(headers('203.0.113.7', '')), null);
+});
+
+test('an IP has its own bucket within an account', () => {
+  const key = loginEmailKey('ada@example.com');
+  assert.equal(perIp(key, '10.0.0.1'), perIp(key, '10.0.0.1'));
+  assert.notEqual(perIp(key, '10.0.0.1'), perIp(key, '10.0.0.2'));
+  assert.notEqual(perIp(key, '10.0.0.1'), key);
 });

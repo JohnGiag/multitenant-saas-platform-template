@@ -1,3 +1,4 @@
+import { setTimeout } from 'node:timers/promises';
 import { Injectable, Logger, type CallHandler, type ExecutionContext, type NestInterceptor } from '@nestjs/common';
 import { HTTP_CODE_METADATA } from '@nestjs/common/constants.js';
 import { Reflector } from '@nestjs/core';
@@ -43,19 +44,22 @@ export class AuditInterceptor implements NestInterceptor {
   }
 
   private async record(req: AuditedRequest, actor: Principal, status: number): Promise<void> {
+    const data = {
+      tenantId: actor.tenantId,
+      actorKind: actor.kind,
+      actorId: actor.id,
+      actorRole: actor.role,
+      actedOnTenantId: req.tenantId && req.tenantId !== actor.tenantId ? req.tenantId : null,
+      method: req.method,
+      route: req.route?.path ?? 'unknown',
+      targetId: req.params?.id ?? null,
+      status,
+    };
     try {
-      await this.prisma.auditLog.create({
-        data: {
-          tenantId: actor.tenantId,
-          actorKind: actor.kind,
-          actorId: actor.id,
-          actorRole: actor.role,
-          actedOnTenantId: req.tenantId && req.tenantId !== actor.tenantId ? req.tenantId : null,
-          method: req.method,
-          route: req.route?.path ?? 'unknown',
-          targetId: req.params?.id ?? null,
-          status,
-        },
+      // Once more after a short pause: a pool or connection blip should not cost an audit row.
+      await this.prisma.auditLog.create({ data }).catch(async () => {
+        await setTimeout(200);
+        await this.prisma.auditLog.create({ data });
       });
     } catch (err) {
       // The action already happened: failing its response now would only make the client retry it.

@@ -15,6 +15,8 @@ export interface AuthenticatedRequest {
   method: string;
   headers: Record<string, string | string[] | undefined>;
   principal?: Principal | null;
+  // Set by RateLimitGuard: the address the rate limits are counted against.
+  clientIp?: string;
 }
 
 // The tenant always comes from here (token or API key), never from the request body.

@@ -1,7 +1,7 @@
 import { createHash, createHmac } from 'node:crypto';
 
 export interface PresignRequest {
-  method: 'GET' | 'PUT' | 'DELETE';
+  method: 'GET' | 'PUT' | 'HEAD' | 'DELETE';
   // Only the origin is used, e.g. https://<account>.r2.cloudflarestorage.com.
   endpoint: string;
   // Unencoded, e.g. "/<bucket>/<key>" (path-style addressing, which R2 and S3 both accept).

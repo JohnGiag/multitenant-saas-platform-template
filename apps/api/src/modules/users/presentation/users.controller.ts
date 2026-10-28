@@ -34,7 +34,7 @@ import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { CurrentPrincipal, Roles, SelfService } from '../../auth/presentation/decorators.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
 import { passwordChangeKey } from '../../rate-limit/domain/rate-limit-policy.js';
-import { clearAccountAttempts, countAccountAttempt } from '../../rate-limit/presentation/account-attempts.js';
+import { clearAccountAttempts, countOwnAttempt } from '../../rate-limit/presentation/account-attempts.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { USER_REPOSITORY, type UserRepository } from '../domain/ports/user.repository.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
@@ -91,7 +91,7 @@ export class UsersController {
   ): Promise<void> {
     if (principal.kind !== 'user') throw new ForbiddenException('Only users have passwords');
     const key = passwordChangeKey(principal.tenantId, principal.id);
-    await countAccountAttempt(this.limiter, key, res);
+    await countOwnAttempt(this.limiter, key, res);
     const result = await this.users.changePassword(
       principal.tenantId,
       principal.id,
