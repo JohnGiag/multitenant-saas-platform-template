@@ -1,5 +1,4 @@
 import type { CursorPage, StoredFile } from '@repo/shared-types';
-import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
 import { Pager } from '@/components/pager';
@@ -7,15 +6,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, getCapabilities, getPrincipal } from '@/lib/api';
 import { formatSize } from '@/lib/format-size';
+import { getT, pageTitle } from '@/lib/i18n';
 import { deleteFile, downloadFile } from './actions';
 import { UploadForm } from './upload-form';
 
-export const metadata: Metadata = { title: 'Files' };
+export const generateMetadata = pageTitle('nav.files');
 
 const PAGE_SIZE = 50;
 
 export default async function FilesPage({ searchParams }: PageProps<'/files'>) {
-  const me = await getPrincipal();
+  const [me, t] = await Promise.all([getPrincipal(), getT()]);
   // Tenant business data (SuperAdmin stays out), and only while the storage module is installed and usable.
   if (me.role === 'SuperAdmin' || !(await getCapabilities()).some((c) => c.key === 'storage' && c.enabled)) notFound();
   const canWrite = me.role !== 'Auditor';
@@ -25,14 +25,14 @@ export default async function FilesPage({ searchParams }: PageProps<'/files'>) {
 
   return (
     <div className="grid max-w-5xl gap-6">
-      <h1 className="text-2xl font-semibold">Files</h1>
+      <h1 className="text-2xl font-semibold">{t('nav.files')}</h1>
       {canWrite && (
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2>Upload a file</h2>
+              <h2>{t('files.uploadTitle')}</h2>
             </CardTitle>
-            <CardDescription>The file goes straight from your browser to the storage bucket.</CardDescription>
+            <CardDescription>{t('files.uploadText')}</CardDescription>
           </CardHeader>
           <CardContent>
             <UploadForm />
@@ -42,26 +42,23 @@ export default async function FilesPage({ searchParams }: PageProps<'/files'>) {
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>Files</h2>
+            <h2>{t('nav.files')}</h2>
           </CardTitle>
-          <CardDescription>
-            Files in the platform bucket, newest first (up to 100 MB and 1,000 files per tenant). If this tenant uses its own bucket, files
-            there are managed with the bucket&apos;s own tools and are not listed.
-          </CardDescription>
+          <CardDescription>{t('files.listText')}</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {files.items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No files yet.</p>
+            <p className="text-sm text-muted-foreground">{t('files.none')}</p>
           ) : (
             <Table>
-              <TableCaption className="sr-only">Files of this tenant</TableCaption>
+              <TableCaption className="sr-only">{t('files.caption')}</TableCaption>
               <TableHeader>
                 <TableRow>
-                  <TableHead scope="col">Name</TableHead>
-                  <TableHead scope="col">Size</TableHead>
-                  <TableHead scope="col">Uploaded</TableHead>
-                  <TableHead scope="col">By</TableHead>
-                  <TableHead scope="col">Actions</TableHead>
+                  <TableHead scope="col">{t('common.name')}</TableHead>
+                  <TableHead scope="col">{t('files.size')}</TableHead>
+                  <TableHead scope="col">{t('files.uploaded')}</TableHead>
+                  <TableHead scope="col">{t('files.by')}</TableHead>
+                  <TableHead scope="col">{t('common.actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -72,18 +69,18 @@ export default async function FilesPage({ searchParams }: PageProps<'/files'>) {
                     <TableCell>
                       <time dateTime={f.createdAt}>{f.createdAt.slice(0, 10)}</time>
                     </TableCell>
-                    <TableCell>{f.uploaderId === me.id ? 'You' : 'Someone else'}</TableCell>
+                    <TableCell>{f.uploaderId === me.id ? t('common.you') : t('files.someoneElse')}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
-                        <ActionForm action={downloadFile.bind(null, f.key)} submitLabel="Download" variant="outline" size="sm" className="flex items-center gap-2" />
+                        <ActionForm action={downloadFile.bind(null, f.key)} submitLabel={t('files.download')} variant="outline" size="sm" className="flex items-center gap-2" />
                         {/* The API lets only the uploader or a TenantAdmin delete. */}
                         {canWrite && (me.role === 'TenantAdmin' || f.uploaderId === me.id) && (
                           <ActionForm
                             action={deleteFile.bind(null, f.key)}
-                            submitLabel="Delete"
+                            submitLabel={t('common.delete')}
                             variant="destructive"
                             size="sm"
-                            confirm={`Delete ${f.filename}? This cannot be undone.`}
+                            confirm={t('files.deleteConfirm', { name: f.filename })}
                             className="flex items-center gap-2"
                           />
                         )}
@@ -94,7 +91,7 @@ export default async function FilesPage({ searchParams }: PageProps<'/files'>) {
               </TableBody>
             </Table>
           )}
-          <Pager next={files.nextCursor && `/files?${new URLSearchParams({ cursor: files.nextCursor })}`} first={current && '/files'} label="files" />
+          <Pager next={files.nextCursor && `/files?${new URLSearchParams({ cursor: files.nextCursor })}`} first={current && '/files'} label={t('nav.files')} />
         </CardContent>
       </Card>
     </div>

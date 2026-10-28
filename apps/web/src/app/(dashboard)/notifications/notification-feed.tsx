@@ -2,18 +2,21 @@
 
 import type { Notification } from '@repo/shared-types';
 import { useEffect, useState } from 'react';
+import { useT } from '@/components/i18n-provider';
 
+// Message keys.
 const STATUS = {
-  connecting: 'Connecting…',
-  live: 'Live: new notifications appear here.',
-  offline: 'Disconnected. Reload the page to reconnect.',
-  closed: 'Closed because this account opened the feed in too many other tabs.',
+  connecting: 'notifications.connecting',
+  live: 'notifications.live',
+  offline: 'notifications.offline',
+  closed: 'notifications.closed',
 } as const;
 
 const MAX_ITEMS = 50;
 
 // The caller's own notifications as they arrive. Kept in memory only: the API does not store them.
 export function NotificationFeed() {
+  const t = useT();
   const [items, setItems] = useState<(Notification & { receivedAt: string })[]>([]);
   const [status, setStatus] = useState<keyof typeof STATUS>('connecting');
 
@@ -36,12 +39,12 @@ export function NotificationFeed() {
   return (
     <div className="grid gap-4">
       <p aria-live="polite" className="text-sm text-muted-foreground">
-        {STATUS[status]}
+        {t(STATUS[status])}
       </p>
       {/* role="log": screen readers announce new entries as they are added. */}
-      <div role="log" aria-label="Received notifications">
+      <div role="log" aria-label={t('notifications.received')}>
         {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing received yet.</p>
+          <p className="text-sm text-muted-foreground">{t('notifications.none')}</p>
         ) : (
           <ul className="grid gap-3">
             {items.map((n, i) => (

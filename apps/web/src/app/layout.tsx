@@ -2,7 +2,9 @@ import { ClerkProvider } from '@clerk/nextjs';
 import type { Metadata } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { I18nProvider } from '@/components/i18n-provider';
 import { CLERK } from '@/lib/auth-mode';
+import { getLocale, getMessages } from '@/lib/i18n';
 import { THEME_SCRIPT } from '@/lib/theme';
 import './globals.css';
 
@@ -30,23 +32,26 @@ const clerkAppearance = {
   },
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const [locale, messages] = await Promise.all([getLocale(), getMessages()]);
   return (
     // The theme script sets the `dark` class before React hydrates.
-    <html lang="en" className={jakarta.variable} suppressHydrationWarning>
+    <html lang={locale} className={jakarta.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body className="min-h-dvh font-sans antialiased">
-        {/* Clerk mode only: local mode has no Clerk keys, and the provider would refuse to start without them. */}
-        {CLERK ? (
-          // Pending sessions (no organization chosen yet) come back to /login, which shows the choice.
-          <ClerkProvider signInUrl="/login" afterSignOutUrl="/login" taskUrls={{ 'choose-organization': '/login' }} appearance={clerkAppearance}>
-            {children}
-          </ClerkProvider>
-        ) : (
-          children
-        )}
+        <I18nProvider locale={locale} messages={messages}>
+          {/* Clerk mode only: local mode has no Clerk keys, and the provider would refuse to start without them. */}
+          {CLERK ? (
+            // Pending sessions (no organization chosen yet) come back to /login, which shows the choice.
+            <ClerkProvider signInUrl="/login" afterSignOutUrl="/login" taskUrls={{ 'choose-organization': '/login' }} appearance={clerkAppearance}>
+              {children}
+            </ClerkProvider>
+          ) : (
+            children
+          )}
+        </I18nProvider>
       </body>
     </html>
   );

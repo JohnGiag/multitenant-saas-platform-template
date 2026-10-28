@@ -1,6 +1,7 @@
 'use client';
 
 import { useTransition } from 'react';
+import { useT } from '@/components/i18n-provider';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { switchTenant } from '@/app/(dashboard)/actions';
@@ -13,29 +14,30 @@ interface TenantSwitcherProps {
 
 // SuperAdmin only: picks the tenant its requests act on (X-Tenant-Id).
 export function TenantSwitcher({ tenants, current, ownTenantId }: TenantSwitcherProps) {
+  const t = useT();
   const [pending, startTransition] = useTransition();
   return (
     <div className="flex items-center gap-2">
-      <Label htmlFor="tenant-switcher">Tenant</Label>
+      <Label htmlFor="tenant-switcher">{t('common.tenant')}</Label>
       <Select
         value={current}
         disabled={pending}
         onValueChange={(id) => startTransition(() => switchTenant(id === ownTenantId ? null : id))}
       >
         <SelectTrigger id="tenant-switcher" className="min-w-48">
-          <SelectValue placeholder="Select a tenant" />
+          <SelectValue placeholder={t('tenantSwitcher.placeholder')} />
         </SelectTrigger>
         <SelectContent>
-          {tenants.map((t) => (
-            <SelectItem key={t.id} value={t.id}>
-              {t.name}
-              {t.id === ownTenantId && ' (platform)'}
+          {tenants.map((tenant) => (
+            <SelectItem key={tenant.id} value={tenant.id}>
+              {tenant.name}
+              {tenant.id === ownTenantId && ` ${t('tenantSwitcher.platform')}`}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
       <span aria-live="polite" className="sr-only">
-        {pending ? 'Switching tenant…' : ''}
+        {pending ? t('tenantSwitcher.switching') : ''}
       </span>
     </div>
   );

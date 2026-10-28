@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Brand } from '@/components/brand';
+import { LanguageSwitcher } from '@/components/language-switcher';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
@@ -13,7 +14,8 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         </div>
       </main>
       {/* After the form in tab order, so the first Tab still reaches it. */}
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        <LanguageSwitcher />
         <ThemeToggle />
       </div>
     </div>

@@ -12,6 +12,7 @@ import {
 import { redirect } from 'next/navigation';
 import { apiFailure, publicApi } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
+import { getT } from '@/lib/i18n';
 import { endSession, startSession } from '@/lib/session';
 
 // `tenants`: the password matched accounts in several tenants; the form asks which, for this `email`.
@@ -61,7 +62,7 @@ export async function requestPasswordReset(_: FormState, form: FormData): Promis
   } catch (error) {
     return apiFailure(error);
   }
-  return { success: 'If that email has an account, we have sent it a link to choose a new password (one per tenant).' };
+  return { success: (await getT())('reset.sent') };
 }
 
 export async function confirmPasswordReset(_: FormState, form: FormData): Promise<FormState> {
@@ -72,5 +73,5 @@ export async function confirmPasswordReset(_: FormState, form: FormData): Promis
   } catch (error) {
     return apiFailure(error);
   }
-  return { success: 'Your password has been changed. You can now sign in.' };
+  return { success: (await getT())('reset.done') };
 }

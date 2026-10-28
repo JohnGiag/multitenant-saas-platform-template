@@ -1,5 +1,4 @@
 import type { CursorPage, Tenant } from '@repo/shared-types';
-import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
 import { TierSelect } from '@/components/choice-select';
@@ -12,15 +11,16 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, getPrincipal } from '@/lib/api';
 import { CLERK } from '@/lib/auth-mode';
+import { getT, pageTitle } from '@/lib/i18n';
 import { getTenantOverride } from '@/lib/session';
 import { createTenant, deleteTenant, openTenant, updateTenant } from './actions';
 
-export const metadata: Metadata = { title: 'Tenants' };
+export const generateMetadata = pageTitle('nav.tenants');
 
 const PAGE_SIZE = 50;
 
 export default async function TenantsPage({ searchParams }: PageProps<'/tenants'>) {
-  const me = await getPrincipal();
+  const [me, t] = await Promise.all([getPrincipal(), getT()]);
   if (me.role !== 'SuperAdmin') notFound();
   const { cursor } = await searchParams;
   const current = typeof cursor === 'string' ? cursor : undefined;
@@ -32,22 +32,22 @@ export default async function TenantsPage({ searchParams }: PageProps<'/tenants'
 
   return (
     <div className="grid max-w-5xl gap-6">
-      <h1 className="text-2xl font-semibold">Tenants</h1>
+      <h1 className="text-2xl font-semibold">{t('nav.tenants')}</h1>
 
       {/* Clerk mode: tenants are Clerk organizations, created and deleted there (the API answers 409 here). */}
       {CLERK ? (
-        <p className="text-sm text-muted-foreground">Tenants are your Clerk organizations: create and delete them in Clerk.</p>
+        <p className="text-sm text-muted-foreground">{t('tenants.clerk')}</p>
       ) : (
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2>Create a tenant</h2>
+              <h2>{t('tenants.createTitle')}</h2>
             </CardTitle>
-            <CardDescription>New tenants start on the free tier. Open it afterwards and invite its first TenantAdmin from Users.</CardDescription>
+            <CardDescription>{t('tenants.createText')}</CardDescription>
           </CardHeader>
           <CardContent>
-            <ActionForm action={createTenant} submitLabel="Create tenant" className="sm:grid-cols-[1fr_auto] sm:items-end">
-              <Field id="new-tenant-name" name="name" label="Name" required maxLength={100} autoComplete="off" />
+            <ActionForm action={createTenant} submitLabel={t('tenants.createButton')} className="sm:grid-cols-[1fr_auto] sm:items-end">
+              <Field id="new-tenant-name" name="name" label={t('common.name')} required maxLength={100} autoComplete="off" />
             </ActionForm>
           </CardContent>
         </Card>
@@ -56,66 +56,66 @@ export default async function TenantsPage({ searchParams }: PageProps<'/tenants'
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>All tenants</h2>
+            <h2>{t('tenants.all')}</h2>
           </CardTitle>
-          <CardDescription>The tier sets each tenant&apos;s rate limit: free 120, pro 600, enterprise 3000 requests per minute.</CardDescription>
+          <CardDescription>{t('tenants.allText')}</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
-            <TableCaption className="sr-only">All tenants on the platform</TableCaption>
+            <TableCaption className="sr-only">{t('tenants.caption')}</TableCaption>
             <TableHeader>
               <TableRow>
-                <TableHead scope="col">Name</TableHead>
-                <TableHead scope="col">Tier</TableHead>
-                <TableHead scope="col">Created</TableHead>
-                <TableHead scope="col">Actions</TableHead>
+                <TableHead scope="col">{t('common.name')}</TableHead>
+                <TableHead scope="col">{t('common.tier')}</TableHead>
+                <TableHead scope="col">{t('common.created')}</TableHead>
+                <TableHead scope="col">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {tenants.items.map((t) => {
-                const isPlatform = t.id === me.tenantId;
+              {tenants.items.map((tenant) => {
+                const isPlatform = tenant.id === me.tenantId;
                 return (
-                  <TableRow key={t.id} className="align-top">
+                  <TableRow key={tenant.id} className="align-top">
                     <TableCell className="font-medium">
                       <span className="flex flex-wrap items-center gap-2">
-                        {t.name}
-                        {isPlatform && <Badge variant="secondary">Platform</Badge>}
-                        {t.id === activeId && <Badge variant="outline">Selected</Badge>}
+                        {tenant.name}
+                        {isPlatform && <Badge variant="secondary">{t('tenants.platform')}</Badge>}
+                        {tenant.id === activeId && <Badge variant="outline">{t('tenants.selected')}</Badge>}
                       </span>
                     </TableCell>
-                    <TableCell className="capitalize">{t.tier}</TableCell>
+                    <TableCell className="capitalize">{tenant.tier}</TableCell>
                     <TableCell>
-                      <time dateTime={t.createdAt}>{t.createdAt.slice(0, 10)}</time>
+                      <time dateTime={tenant.createdAt}>{tenant.createdAt.slice(0, 10)}</time>
                     </TableCell>
                     <TableCell className="whitespace-normal">
                       <div className="flex flex-wrap items-start gap-2">
-                        {t.id !== activeId && (
-                          <form action={openTenant.bind(null, t.id)}>
-                            <Button type="submit" size="sm" variant="outline" aria-label={`Open ${t.name}`}>
-                              Open
+                        {tenant.id !== activeId && (
+                          <form action={openTenant.bind(null, tenant.id)}>
+                            <Button type="submit" size="sm" variant="outline" aria-label={t('tenants.openLabel', { name: tenant.name })}>
+                              {t('tenants.open')}
                             </Button>
                           </form>
                         )}
                         <details className="group min-w-0">
                           <summary className="inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring">
-                            Manage<span className="sr-only"> {t.name}</span>
+                            {t('tenants.manage')}<span className="sr-only"> {tenant.name}</span>
                           </summary>
                           <div className="mt-3 grid w-72 gap-4 rounded-md border p-4">
-                            <ActionForm action={updateTenant.bind(null, t.id)} submitLabel="Save" size="sm">
+                            <ActionForm action={updateTenant.bind(null, tenant.id)} submitLabel={t('common.save')} size="sm">
                               {/* Clerk mode: the organization's name, renamed in Clerk (the API answers 409). */}
-                              {!CLERK && <Field id={`name-${t.id}`} name="name" label="Name" required maxLength={100} defaultValue={t.name} />}
+                              {!CLERK && <Field id={`name-${tenant.id}`} name="name" label={t('common.name')} required maxLength={100} defaultValue={tenant.name} />}
                               <div className="grid gap-2">
-                                <Label htmlFor={`tier-${t.id}`}>Tier</Label>
-                                <TierSelect id={`tier-${t.id}`} defaultValue={t.tier} />
+                                <Label htmlFor={`tier-${tenant.id}`}>{t('common.tier')}</Label>
+                                <TierSelect id={`tier-${tenant.id}`} defaultValue={tenant.tier} />
                               </div>
                             </ActionForm>
                             {!isPlatform && !CLERK && (
-                              <ActionForm action={deleteTenant.bind(null, t.id, t.name)} submitLabel="Delete tenant" variant="destructive" size="sm">
+                              <ActionForm action={deleteTenant.bind(null, tenant.id, tenant.name)} submitLabel={t('tenants.deleteButton')} variant="destructive" size="sm">
                                 <Field
-                                  id={`confirm-${t.id}`}
+                                  id={`confirm-${tenant.id}`}
                                   name="confirm"
-                                  label={`Type “${t.name}” to delete it`}
-                                  hint="Deletes its users, invitations, API keys, integrations, jobs and files. This cannot be undone."
+                                  label={t('tenants.typeToDelete', { name: tenant.name })}
+                                  hint={t('tenants.deleteHint')}
                                   required
                                   autoComplete="off"
                                 />
@@ -130,7 +130,7 @@ export default async function TenantsPage({ searchParams }: PageProps<'/tenants'
               })}
             </TableBody>
           </Table>
-          <Pager next={tenants.nextCursor && `/tenants?${new URLSearchParams({ cursor: tenants.nextCursor })}`} first={current && '/tenants'} label="tenants" />
+          <Pager next={tenants.nextCursor && `/tenants?${new URLSearchParams({ cursor: tenants.nextCursor })}`} first={current && '/tenants'} label={t('nav.tenants')} />
         </CardContent>
       </Card>
     </div>

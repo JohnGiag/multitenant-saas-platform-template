@@ -2,6 +2,7 @@
 
 import { useActionState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/components/i18n-provider';
 import type { FormState } from '@/lib/form-state';
 import { cn } from 'cn';
 
@@ -18,6 +19,7 @@ interface ActionFormProps {
 
 // A server-action form whose result is announced to screen readers through a live region.
 export function ActionForm({ action, submitLabel, variant, size, confirm, className, children }: ActionFormProps) {
+  const t = useT();
   const [state, formAction, pending] = useActionState(action, undefined);
   return (
     <form
@@ -33,7 +35,7 @@ export function ActionForm({ action, submitLabel, variant, size, confirm, classN
         {state?.error ?? state?.success}
       </p>
       <Button type="submit" variant={variant} size={size} disabled={pending} className="justify-self-start">
-        {pending ? 'Working…' : submitLabel}
+        {pending ? t('common.working') : submitLabel}
       </Button>
     </form>
   );

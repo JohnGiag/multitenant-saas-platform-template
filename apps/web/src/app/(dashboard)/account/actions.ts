@@ -3,6 +3,7 @@
 import { ChangePasswordSchema } from '@repo/shared-types';
 import { api, apiFailure } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
+import { getT } from '@/lib/i18n';
 
 export async function changePassword(_: FormState, form: FormData): Promise<FormState> {
   const parsed = ChangePasswordSchema.safeParse({ currentPassword: form.get('currentPassword'), newPassword: form.get('newPassword') });
@@ -13,5 +14,5 @@ export async function changePassword(_: FormState, form: FormData): Promise<Form
   } catch (error) {
     return apiFailure(error);
   }
-  return { success: 'Password changed.' };
+  return { success: (await getT())('account.passwordChanged') };
 }

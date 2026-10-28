@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { removeIntegration, saveIntegration } from '@/app/(dashboard)/actions';
 import { capabilityTitle, type ConfigurableCapability } from '@/lib/capabilities';
+import { getT } from '@/lib/i18n';
 import { INTEGRATION_FIELDS } from '@/lib/integration-fields';
 
 interface IntegrationSettingsProps {
@@ -16,7 +17,8 @@ interface IntegrationSettingsProps {
 }
 
 // Secrets are write-only: the API only ever returns masked values, so changing the config means entering it again.
-export function IntegrationSettings({ capability, integration, canManage }: IntegrationSettingsProps) {
+export async function IntegrationSettings({ capability, integration, canManage }: IntegrationSettingsProps) {
+  const t = await getT();
   const provider = capability.integration;
   const fields = INTEGRATION_FIELDS[provider];
   const id = (name: string) => `${provider}-${name}`;
@@ -25,18 +27,18 @@ export function IntegrationSettings({ capability, integration, canManage }: Inte
       <CardHeader>
         <CardTitle className="flex items-center gap-3">
           <h2>{capabilityTitle(capability.key)}</h2>
-          <Badge variant={capability.enabled ? 'default' : 'outline'}>{capability.enabled ? 'Enabled' : 'Not configured'}</Badge>
+          <Badge variant={capability.enabled ? 'default' : 'outline'}>{capability.enabled ? t('common.enabled') : t('common.notConfigured')}</Badge>
         </CardTitle>
         <CardDescription>
-          Integration <code>{provider}</code>
-          {capability.enabled && !integration && ': using the platform defaults until you set your own.'}
+          {t('integration.label')} <code>{provider}</code>
+          {capability.enabled && !integration && `: ${t('integration.platformDefaults')}`}
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6">
         {integration && (
           <section aria-labelledby={id('current')}>
             <h3 id={id('current')} className="mb-2 text-sm font-medium">
-              Current config {integration.enabled ? '' : '(disabled)'}
+              {t('integration.current')} {integration.enabled ? '' : t('integration.disabled')}
             </h3>
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
               {Object.entries(integration.maskedConfig).map(([key, value]) => (
@@ -51,17 +53,17 @@ export function IntegrationSettings({ capability, integration, canManage }: Inte
         {canManage && (
           <section aria-labelledby={id('edit')}>
             <h3 id={id('edit')} className="mb-2 text-sm font-medium">
-              {integration ? 'Replace config' : 'Set up'}
+              {integration ? t('integration.replace') : t('integration.setUp')}
             </h3>
-            <ActionForm action={saveIntegration.bind(null, provider)} submitLabel="Save">
+            <ActionForm action={saveIntegration.bind(null, provider)} submitLabel={t('common.save')}>
               {fields ? (
                 fields.map((f) => (
                   <Field
                     key={f.name}
                     id={id(f.name)}
                     name={f.name}
-                    label={f.optional ? `${f.label} (optional)` : f.label}
-                    hint={f.hint}
+                    label={f.optional ? t('integration.optional', { label: t(f.label) }) : t(f.label)}
+                    hint={f.hint && t(f.hint)}
                     required={!f.optional}
                     autoComplete="off"
                     spellCheck={false}
@@ -69,11 +71,11 @@ export function IntegrationSettings({ capability, integration, canManage }: Inte
                   />
                 ))
               ) : (
-                <Field id={id('config')} name="config" label="Config (JSON)" multiline rows={6} required spellCheck={false} hint='A JSON object of strings, e.g. {"apiKey": "…"}.' />
+                <Field id={id('config')} name="config" label={t('integration.json')} multiline rows={6} required spellCheck={false} hint={t('integration.jsonHint')} />
               )}
               <div className="flex items-center gap-2">
                 <Checkbox id={id('enabled')} name="enabled" defaultChecked={integration?.enabled ?? true} />
-                <Label htmlFor={id('enabled')}>Enabled</Label>
+                <Label htmlFor={id('enabled')}>{t('common.enabled')}</Label>
               </div>
             </ActionForm>
           </section>
@@ -81,11 +83,11 @@ export function IntegrationSettings({ capability, integration, canManage }: Inte
         {canManage && integration && (
           <section aria-labelledby={id('remove')}>
             <h3 id={id('remove')} className="mb-2 text-sm font-medium">
-              Remove
+              {t('common.remove')}
             </h3>
-            <ActionForm action={removeIntegration.bind(null, provider)} submitLabel={`Remove ${provider} config`}
+            <ActionForm action={removeIntegration.bind(null, provider)} submitLabel={t('integration.removeButton', { provider })}
               variant="destructive"
-              confirm={`Remove the ${provider} config? Its secrets are deleted and cannot be shown again.`}
+              confirm={t('integration.removeConfirm', { provider })}
             />
           </section>
         )}

@@ -4,6 +4,7 @@ import { IdSchema, IntegrationProviderSchema, UpdateTenantSchema, UpsertTenantIn
 import { revalidatePath } from 'next/cache';
 import { api, apiFailure } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
+import { getT } from '@/lib/i18n';
 import { INTEGRATION_FIELDS } from '@/lib/integration-fields';
 import { setTenantOverride } from '@/lib/session';
 
@@ -22,7 +23,7 @@ export async function renameTenant(_: FormState, form: FormData): Promise<FormSt
     return apiFailure(error);
   }
   revalidatePath('/', 'layout');
-  return { success: 'Saved.' };
+  return { success: (await getT())('common.saved') };
 }
 
 export async function saveIntegration(provider: string, _: FormState, form: FormData): Promise<FormState> {
@@ -34,7 +35,7 @@ export async function saveIntegration(provider: string, _: FormState, form: Form
     try {
       config = JSON.parse(String(form.get('config') ?? ''));
     } catch {
-      return { error: 'Config must be valid JSON.' };
+      return { error: (await getT())('integration.invalidJson') };
     }
   }
   const parsed = UpsertTenantIntegrationSchema.safeParse({ config, enabled: form.get('enabled') === 'on' });
@@ -45,7 +46,7 @@ export async function saveIntegration(provider: string, _: FormState, form: Form
     return apiFailure(error);
   }
   revalidatePath('/', 'layout');
-  return { success: 'Saved.' };
+  return { success: (await getT())('common.saved') };
 }
 
 export async function removeIntegration(provider: string): Promise<FormState> {
@@ -55,5 +56,5 @@ export async function removeIntegration(provider: string): Promise<FormState> {
     return apiFailure(error);
   }
   revalidatePath('/', 'layout');
-  return { success: 'Removed.' };
+  return { success: (await getT())('integration.removed') };
 }

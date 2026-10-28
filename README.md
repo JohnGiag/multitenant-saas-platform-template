@@ -319,6 +319,7 @@ Optional module `storage`, for Cloudflare R2 or any S3-compatible store.
 - **Session:** an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production). When the 15-minute token expires, the next request goes back to `/login`. `getToken()` in `src/lib/session.ts` is the one place that knows where the token comes from.
 - **Live notifications:** the browser's `EventSource` connects to the dashboard's `/notifications/stream`, which adds the token and relays the API's stream. There is no history: only what arrives while the page is open.
 - **Tenant switcher:** a `SuperAdmin` picks the tenant to act on (sent as `X-Tenant-Id`). Everyone else sees their own tenant's name, or Clerk's organization switcher in Clerk mode.
+- **Languages:** English and Greek. The text lives in the API's `translations` table (one row per language and key) and comes from the public `GET /v1/translations/:locale`, which falls back to English for keys a language lacks. The dashboard caches it for a minute, so an edit in the table shows without a deploy. The language switcher stores the choice in a `locale` cookie; without one, the browser's `Accept-Language` decides. To add a language: list it in `LOCALES` (`packages/shared-types/src/i18n.ts`) and insert its rows in a migration. Clerk's own widgets and the API's error messages stay in English.
 
 ## API reference
 

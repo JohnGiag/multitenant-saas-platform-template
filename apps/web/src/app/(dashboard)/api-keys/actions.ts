@@ -4,6 +4,7 @@ import { CreateApiKeySchema, IdSchema, type CreatedApiKey } from '@repo/shared-t
 import { revalidatePath } from 'next/cache';
 import { api, apiFailure } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
+import { getT } from '@/lib/i18n';
 
 // `key` reaches the browser exactly once, in this action's response; it is never stored or rendered again.
 export type CreateApiKeyState = (NonNullable<FormState> & { key?: string; name?: string }) | undefined;
@@ -28,5 +29,5 @@ export async function revokeApiKey(id: string): Promise<FormState> {
     return apiFailure(error);
   }
   revalidatePath('/api-keys');
-  return { success: 'Key revoked.' };
+  return { success: (await getT())('apiKeys.revokedDone') };
 }

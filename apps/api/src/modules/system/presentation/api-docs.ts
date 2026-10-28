@@ -107,6 +107,7 @@ const TAGS: Record<string, string> = {
   push: 'Push devices (optional module)',
   storage: 'Files through presigned URLs (optional module)',
   'audit-logs': 'Recorded writes',
+  translations: "The dashboard's text in each language",
   system: 'Installed modules',
 };
 

@@ -1,26 +1,30 @@
-import type { Metadata } from 'next';
 import { Gauge, Puzzle, ShieldCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getCapabilities, getCurrentTenant, getPrincipal } from '@/lib/api';
 import { capabilityTitle } from '@/lib/capabilities';
+import { getT, pageTitle } from '@/lib/i18n';
 
-export const metadata: Metadata = { title: 'Overview' };
+export const generateMetadata = pageTitle('nav.overview');
 
 export default async function OverviewPage() {
-  const [me, tenant, capabilities] = await Promise.all([getPrincipal(), getCurrentTenant(), getCapabilities()]);
+  const [me, tenant, capabilities, t] = await Promise.all([getPrincipal(), getCurrentTenant(), getCapabilities(), getT()]);
   const stats = [
-    { label: 'Tier', value: tenant.tier, icon: Gauge },
-    { label: 'Your role', value: me.role, icon: ShieldCheck },
-    { label: 'Features enabled', value: `${capabilities.filter((c) => c.enabled).length} of ${capabilities.length}`, icon: Puzzle },
+    { label: t('common.tier'), value: tenant.tier, icon: Gauge },
+    { label: t('overview.yourRole'), value: me.role, icon: ShieldCheck },
+    {
+      label: t('overview.featuresEnabled'),
+      value: t('overview.featuresCount', { enabled: capabilities.filter((c) => c.enabled).length, total: capabilities.length }),
+      icon: Puzzle,
+    },
   ];
   return (
     <div className="grid max-w-5xl gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">{t('nav.overview')}</h1>
       <div className="grid gap-1">
         <h2 className="text-lg font-semibold">{tenant.name}</h2>
         <p className="text-sm text-muted-foreground">
-          Tenant ID <span className="font-mono break-all">{tenant.id}</span>
+          {t('common.tenantId')} <span className="font-mono break-all">{tenant.id}</span>
         </p>
       </div>
       <ul className="grid gap-4 sm:grid-cols-3">
@@ -41,19 +45,19 @@ export default async function OverviewPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>Features</h2>
+            <h2>{t('overview.features')}</h2>
           </CardTitle>
-          <CardDescription>Optional modules installed on this platform.</CardDescription>
+          <CardDescription>{t('overview.featuresText')}</CardDescription>
         </CardHeader>
         <CardContent>
           {capabilities.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No optional modules are installed.</p>
+            <p className="text-sm text-muted-foreground">{t('overview.noModules')}</p>
           ) : (
             <ul className="divide-y">
               {capabilities.map((c) => (
                 <li key={c.key} className="flex items-center justify-between gap-4 py-3 text-sm first:pt-0 last:pb-0">
                   <span className="font-medium">{capabilityTitle(c.key)}</span>
-                  <Badge variant={c.enabled ? 'default' : 'outline'}>{c.enabled ? 'Enabled' : 'Not configured'}</Badge>
+                  <Badge variant={c.enabled ? 'default' : 'outline'}>{c.enabled ? t('common.enabled') : t('common.notConfigured')}</Badge>
                 </li>
               ))}
             </ul>

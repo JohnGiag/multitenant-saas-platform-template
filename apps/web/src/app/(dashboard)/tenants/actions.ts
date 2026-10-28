@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { api, apiFailure, getPrincipal } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
+import { getT } from '@/lib/i18n';
 import { getTenantOverride, setTenantOverride } from '@/lib/session';
 
 // The tenant switcher in the layout lists tenants too, so every change refreshes the whole dashboard.
@@ -23,7 +24,7 @@ export async function createTenant(_: FormState, form: FormData): Promise<FormSt
   if (!parsed.success) return invalid(parsed.error);
   return run(
     () => api<Tenant>('/tenants', { method: 'POST', body: parsed.data, ownTenant: true }),
-    `Tenant “${parsed.data.name}” created. Open it to invite its first TenantAdmin.`,
+    (await getT())('tenants.created', { name: parsed.data.name }),
   );
 }
 
@@ -31,13 +32,14 @@ export async function updateTenant(id: string, _: FormState, form: FormData): Pr
   // No name field in Clerk mode: the tier alone is sent.
   const parsed = AdminUpdateTenantSchema.safeParse({ name: form.get('name') ?? undefined, tier: form.get('tier') });
   if (!parsed.success) return invalid(parsed.error);
-  return run(() => api(`/tenants/${IdSchema.parse(id)}`, { method: 'PATCH', body: parsed.data, ownTenant: true }), 'Saved.');
+  return run(() => api(`/tenants/${IdSchema.parse(id)}`, { method: 'PATCH', body: parsed.data, ownTenant: true }), (await getT())('common.saved'));
 }
 
 // Typing the name guards against deleting the wrong row; the API is what actually authorizes it.
 export async function deleteTenant(id: string, name: string, _: FormState, form: FormData): Promise<FormState> {
-  if (form.get('confirm') !== name) return { error: `Type “${name}” exactly to confirm.` };
-  const result = await run(() => api(`/tenants/${IdSchema.parse(id)}`, { method: 'DELETE', ownTenant: true }), `Tenant “${name}” deleted.`);
+  const t = await getT();
+  if (form.get('confirm') !== name) return { error: t('tenants.confirmMismatch', { name }) };
+  const result = await run(() => api(`/tenants/${IdSchema.parse(id)}`, { method: 'DELETE', ownTenant: true }), t('tenants.deleted', { name }));
   // Acting on a tenant that no longer exists would make every page 404.
   if (!result?.error && (await getTenantOverride()) === id) await setTenantOverride(null);
   return result;

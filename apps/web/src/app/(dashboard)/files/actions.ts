@@ -5,17 +5,18 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { api, apiFailure } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
+import { getT } from '@/lib/i18n';
 
 // Only the URL comes back: the browser PUTs the file straight to the bucket, so the bytes never pass through
 // the dashboard or the API.
 export async function createUpload(filename: string, size: number): Promise<{ url: string } | { error: string }> {
   const parsed = CreateUploadSchema.safeParse({ filename, size });
-  if (!parsed.success) return { error: invalid(parsed.error)?.error ?? 'Invalid file' };
+  if (!parsed.success) return { error: invalid(parsed.error)?.error ?? (await getT())('files.invalid') };
   try {
     const { url } = await api<PresignedUpload>('/storage/uploads', { method: 'POST', body: parsed.data });
     return { url };
   } catch (error) {
-    return { error: apiFailure(error)?.error ?? 'Upload failed' };
+    return { error: apiFailure(error)?.error ?? (await getT())('files.failed') };
   }
 }
 
@@ -36,5 +37,5 @@ export async function deleteFile(key: string): Promise<FormState> {
     return apiFailure(error);
   }
   revalidatePath('/files');
-  return { success: 'File deleted.' };
+  return { success: (await getT())('files.deleted') };
 }

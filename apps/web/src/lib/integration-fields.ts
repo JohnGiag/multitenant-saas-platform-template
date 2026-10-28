@@ -1,3 +1,4 @@
+// `label` and `hint` are message keys.
 export interface IntegrationField {
   name: string;
   label: string;
@@ -11,15 +12,15 @@ export interface IntegrationField {
 // listed here, from a module added later, gets a raw JSON editor, so installing a module needs no dashboard change.
 export const INTEGRATION_FIELDS: Record<string, IntegrationField[]> = {
   resend: [
-    { name: 'apiKey', label: 'API key', secret: true },
-    { name: 'from', label: 'Sender', hint: 'e.g. Acme <no-reply@acme.com>, on a domain verified in Resend.' },
+    { name: 'apiKey', label: 'field.resend.apiKey', secret: true },
+    { name: 'from', label: 'field.resend.from', hint: 'field.resend.from.hint' },
   ],
-  fcm: [{ name: 'serviceAccount', label: 'Service account JSON', secret: true, multiline: true, hint: 'The key file from Firebase → Project settings → Service accounts.' }],
+  fcm: [{ name: 'serviceAccount', label: 'field.fcm.serviceAccount', secret: true, multiline: true, hint: 'field.fcm.serviceAccount.hint' }],
   r2: [
-    { name: 'endpoint', label: 'Endpoint', hint: 'e.g. https://<account-id>.r2.cloudflarestorage.com' },
-    { name: 'bucket', label: 'Bucket' },
-    { name: 'accessKeyId', label: 'Access key ID' },
-    { name: 'secretAccessKey', label: 'Secret access key', secret: true },
-    { name: 'region', label: 'Region', optional: true, hint: 'Leave empty for R2 ("auto").' },
+    { name: 'endpoint', label: 'field.r2.endpoint', hint: 'field.r2.endpoint.hint' },
+    { name: 'bucket', label: 'field.r2.bucket' },
+    { name: 'accessKeyId', label: 'field.r2.accessKeyId' },
+    { name: 'secretAccessKey', label: 'field.r2.secretAccessKey', secret: true },
+    { name: 'region', label: 'field.r2.region', optional: true, hint: 'field.r2.region.hint' },
   ],
 };

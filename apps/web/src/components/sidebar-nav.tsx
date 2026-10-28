@@ -5,26 +5,28 @@ import { Bell, Building2, FileText, KeyRound, LayoutDashboard, ScrollText, Setti
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from 'cn';
+import { useT } from '@/components/i18n-provider';
 
 // `roles`: only shown to these (the API enforces the same; this just hides links that would 404).
-// `capability`: only while that optional module is installed and enabled for the tenant.
+// `capability`: only while that optional module is installed and enabled for the tenant. `label` is a message key.
 const LINKS: { href: string; label: string; icon: typeof Settings; roles?: Role[]; capability?: string }[] = [
-  { href: '/', label: 'Overview', icon: LayoutDashboard },
-  { href: '/tenants', label: 'Tenants', icon: Building2, roles: ['SuperAdmin'] },
-  { href: '/users', label: 'Users', icon: Users, roles: ['SuperAdmin', 'TenantAdmin', 'Auditor'] },
-  { href: '/api-keys', label: 'API keys', icon: KeyRound, roles: ['TenantAdmin', 'Auditor'] },
-  { href: '/files', label: 'Files', icon: FileText, roles: ['TenantAdmin', 'User', 'Auditor'], capability: 'storage' },
-  { href: '/notifications', label: 'Notifications', icon: Bell },
-  { href: '/audit', label: 'Audit log', icon: ScrollText, roles: ['SuperAdmin', 'TenantAdmin', 'Auditor'] },
-  { href: '/settings', label: 'Settings', icon: Settings },
-  { href: '/account', label: 'Account', icon: UserRound },
+  { href: '/', label: 'nav.overview', icon: LayoutDashboard },
+  { href: '/tenants', label: 'nav.tenants', icon: Building2, roles: ['SuperAdmin'] },
+  { href: '/users', label: 'nav.users', icon: Users, roles: ['SuperAdmin', 'TenantAdmin', 'Auditor'] },
+  { href: '/api-keys', label: 'nav.apiKeys', icon: KeyRound, roles: ['TenantAdmin', 'Auditor'] },
+  { href: '/files', label: 'nav.files', icon: FileText, roles: ['TenantAdmin', 'User', 'Auditor'], capability: 'storage' },
+  { href: '/notifications', label: 'nav.notifications', icon: Bell },
+  { href: '/audit', label: 'nav.audit', icon: ScrollText, roles: ['SuperAdmin', 'TenantAdmin', 'Auditor'] },
+  { href: '/settings', label: 'nav.settings', icon: Settings },
+  { href: '/account', label: 'nav.account', icon: UserRound },
 ];
 
 export function SidebarNav({ role, features }: { role: Role; features: string[] }) {
+  const t = useT();
   const pathname = usePathname();
   const visible = LINKS.filter((l) => (!l.roles || l.roles.includes(role)) && (!l.capability || features.includes(l.capability)));
   return (
-    <nav aria-label="Main" className="px-3 pb-4">
+    <nav aria-label={t('nav.main')} className="px-3 pb-4">
       <ul className="flex flex-wrap gap-1 md:flex-col">
         {visible.map(({ href, label, icon: Icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -39,7 +41,7 @@ export function SidebarNav({ role, features }: { role: Role; features: string[] 
                 )}
               >
                 <Icon aria-hidden className="size-4 shrink-0" />
-                {label}
+                {t(label)}
               </Link>
             </li>
           );

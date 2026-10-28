@@ -1,5 +1,4 @@
 import type { AuditLogEntry, CursorPage } from '@repo/shared-types';
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Field } from '@/components/field';
@@ -10,15 +9,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, getPrincipal } from '@/lib/api';
 import { AUDIT_FILTER_KEYS, AuditFilterFormSchema } from '@/lib/audit-filter';
+import { getT, pageTitle } from '@/lib/i18n';
 
-export const metadata: Metadata = { title: 'Audit log' };
+export const generateMetadata = pageTitle('nav.audit');
 
 const PAGE_SIZE = 50;
 
 const utc = (iso: string) => `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
 
 export default async function AuditPage({ searchParams }: PageProps<'/audit'>) {
-  const me = await getPrincipal();
+  const [me, t] = await Promise.all([getPrincipal(), getT()]);
   if (me.role === 'User') notFound();
   const isSuperAdmin = me.role === 'SuperAdmin';
   const params = await searchParams;
@@ -43,27 +43,27 @@ export default async function AuditPage({ searchParams }: PageProps<'/audit'>) {
 
   return (
     <div className="grid max-w-6xl gap-6">
-      <h1 className="text-2xl font-semibold">Audit log</h1>
+      <h1 className="text-2xl font-semibold">{t('nav.audit')}</h1>
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>Filter</h2>
+            <h2>{t('audit.filter')}</h2>
           </CardTitle>
-          <CardDescription>Leave a field empty to match everything. Select an actor or target ID in the table to filter by it.</CardDescription>
+          <CardDescription>{t('audit.filterText')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form method="get" action="/audit" className="grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field id="actorId" name="actorId" label="Actor ID" defaultValue={raw.actorId} hint="The user or API key that acted." />
-              <Field id="targetId" name="targetId" label="Target ID" defaultValue={raw.targetId} hint="The record acted on." />
-              <Field id="from" name="from" type="date" label="From (UTC)" defaultValue={raw.from} />
-              <Field id="to" name="to" type="date" label="To (UTC, inclusive)" defaultValue={raw.to} />
+              <Field id="actorId" name="actorId" label={t('audit.actorId')} defaultValue={raw.actorId} hint={t('audit.actorIdHint')} />
+              <Field id="targetId" name="targetId" label={t('audit.targetId')} defaultValue={raw.targetId} hint={t('audit.targetIdHint')} />
+              <Field id="from" name="from" type="date" label={t('audit.from')} defaultValue={raw.from} />
+              <Field id="to" name="to" type="date" label={t('audit.to')} defaultValue={raw.to} />
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit">Filter</Button>
+              <Button type="submit">{t('audit.filterButton')}</Button>
               {filtered && (
                 <Button asChild variant="outline">
-                  <Link href="/audit">Clear filters</Link>
+                  <Link href="/audit">{t('audit.clear')}</Link>
                 </Button>
               )}
             </div>
@@ -73,33 +73,31 @@ export default async function AuditPage({ searchParams }: PageProps<'/audit'>) {
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>{isSuperAdmin ? 'Platform actions' : 'Recorded actions'}</h2>
+            <h2>{isSuperAdmin ? t('audit.platformActions') : t('audit.recordedActions')}</h2>
           </CardTitle>
           <CardDescription>
-            Every successful change made by a signed-in user or API key, newest first. Reads, rejected requests and sign-ins are not recorded.
-            {isSuperAdmin && ' SuperAdmin actions on other tenants are kept here, even after that tenant is deleted.'}
+            {t('audit.text')}
+            {isSuperAdmin && ` ${t('audit.superAdminText')}`}
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {!entries ? (
             <Alert variant="destructive">
-              <AlertDescription>
-                Check the filters: the actor ID must be a full ID, and the dates must be valid.
-              </AlertDescription>
+              <AlertDescription>{t('audit.badFilter')}</AlertDescription>
             </Alert>
           ) : entries.items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{filtered ? 'Nothing matches these filters.' : 'Nothing recorded yet.'}</p>
+            <p className="text-sm text-muted-foreground">{filtered ? t('audit.noMatch') : t('audit.empty')}</p>
           ) : (
             <Table>
-              <TableCaption className="sr-only">Audit log entries, newest first</TableCaption>
+              <TableCaption className="sr-only">{t('audit.caption')}</TableCaption>
               <TableHeader>
                 <TableRow>
-                  <TableHead scope="col">When</TableHead>
-                  <TableHead scope="col">Actor</TableHead>
-                  <TableHead scope="col">Action</TableHead>
-                  <TableHead scope="col">Target</TableHead>
-                  {isSuperAdmin && <TableHead scope="col">On tenant</TableHead>}
-                  <TableHead scope="col">Status</TableHead>
+                  <TableHead scope="col">{t('audit.when')}</TableHead>
+                  <TableHead scope="col">{t('audit.actor')}</TableHead>
+                  <TableHead scope="col">{t('audit.action')}</TableHead>
+                  <TableHead scope="col">{t('audit.target')}</TableHead>
+                  {isSuperAdmin && <TableHead scope="col">{t('audit.onTenant')}</TableHead>}
+                  <TableHead scope="col">{t('common.status')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -109,10 +107,10 @@ export default async function AuditPage({ searchParams }: PageProps<'/audit'>) {
                       <time dateTime={e.createdAt}>{utc(e.createdAt)}</time>
                     </TableCell>
                     <TableCell className="whitespace-normal">
-                      {e.actorId === me.id ? 'You' : `${e.actorRole} ${e.actorKind === 'apiKey' ? 'API key' : 'user'}`}
+                      {e.actorId === me.id ? t('common.you') : t(e.actorKind === 'apiKey' ? 'audit.apiKeyActor' : 'audit.userActor', { role: e.actorRole })}
                       <Link
                         href={`/audit?${new URLSearchParams({ actorId: e.actorId })}`}
-                        aria-label={`Show only actions by ${e.actorId}`}
+                        aria-label={t('audit.byActor', { id: e.actorId })}
                         className="block font-mono text-xs break-all text-muted-foreground underline underline-offset-4"
                       >
                         {e.actorId}
@@ -125,7 +123,7 @@ export default async function AuditPage({ searchParams }: PageProps<'/audit'>) {
                       {e.targetId ? (
                         <Link
                           href={`/audit?${new URLSearchParams({ targetId: e.targetId })}`}
-                          aria-label={`Show only actions on ${e.targetId}`}
+                          aria-label={t('audit.onTarget', { id: e.targetId })}
                           className="underline underline-offset-4"
                         >
                           {e.targetId}
@@ -141,7 +139,7 @@ export default async function AuditPage({ searchParams }: PageProps<'/audit'>) {
               </TableBody>
             </Table>
           )}
-          <Pager next={entries?.nextCursor && href(entries.nextCursor)} first={current && href()} label="audit log entries" />
+          <Pager next={entries?.nextCursor && href(entries.nextCursor)} first={current && href()} label={t('audit.entries')} />
         </CardContent>
       </Card>
     </div>

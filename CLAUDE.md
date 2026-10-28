@@ -108,6 +108,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - Must meet **WCAG 2.1/2.2 AA**: semantic HTML, Radix/shadcn primitives, visible focus, full keyboard operation, labelled form controls, AA colour contrast, and `aria-live` for async status. Every new page goes into `e2e/a11y.spec.ts` (axe), and new flows get a Playwright test in `apps/web/e2e`.
 - The browser never calls the API. Server components and server actions call it through `lib/api.ts` (server-only), with the token from the `httpOnly` session cookie. Never expose the token or `API_URL` to client code.
 - Feature settings pages render only when `/v1/system/capabilities` reports the feature.
+- **No hard-coded UI text.** It lives in the platform-wide `translations` table (not tenant-owned) and reaches pages through `getT()` (server components and actions), `useT()` (client components) and `pageTitle(key)` (titles). A new key gets a row for every locale in `LOCALES`, inserted by a migration; `src/lib/messages.test.ts` checks every key used is seeded, and `test/i18n.e2e.test.mjs` that every locale has every key.
 - API types and validation come from `packages/shared-types`. Don't duplicate DTOs.
 
 ## Conventions

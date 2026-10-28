@@ -227,3 +227,17 @@ model StorageObject {
   @@index([tenantId, id])
   @@map("storage_objects")
 }
+
+// The dashboard's text, one row per language and key (GET /v1/translations/:locale). Platform-wide, not
+// tenant-owned. A key a language lacks falls back to English, which has them all.
+model Translation {
+  id     String @id @default(uuid(7)) @db.Uuid
+  // A LOCALES code from shared-types, e.g. "el".
+  locale String
+  key    String
+  // Plain text; `{name}` marks a value the dashboard fills in.
+  value  String
+
+  @@unique([locale, key])
+  @@map("translations")
+}

@@ -4,12 +4,14 @@ import { MAX_UPLOAD_BYTES } from '@repo/shared-types';
 import { FileCheck, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
+import { useT } from '@/components/i18n-provider';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { formatSize } from '@/lib/format-size';
 import { createUpload } from './actions';
 
 export function UploadForm() {
+  const t = useT();
   const router = useRouter();
   const [status, setStatus] = useState<{ error?: boolean; text: string }>();
   const [pending, setPending] = useState(false);
@@ -20,22 +22,22 @@ export function UploadForm() {
     event.preventDefault();
     const form = event.currentTarget;
     const file = (form.elements.namedItem('file') as HTMLInputElement).files?.[0];
-    if (!file) return setStatus({ error: true, text: 'Choose a file first.' });
-    if (file.size > MAX_UPLOAD_BYTES) return setStatus({ error: true, text: 'Files can be at most 1 MB.' });
+    if (!file) return setStatus({ error: true, text: t('files.chooseFirst') });
+    if (file.size > MAX_UPLOAD_BYTES) return setStatus({ error: true, text: t('files.tooBig') });
     setPending(true);
-    setStatus({ text: `Uploading ${file.name}…` });
+    setStatus({ text: t('files.uploading', { name: file.name }) });
     try {
       const presigned = await createUpload(file.name, file.size);
       if ('error' in presigned) return setStatus({ error: true, text: presigned.error });
       // The URL only accepts exactly file.size bytes, which is what fetch sends for a File body.
       const res = await fetch(presigned.url, { method: 'PUT', body: file });
-      if (!res.ok) return setStatus({ error: true, text: `The bucket refused the upload (${res.status}).` });
-      setStatus({ text: `Uploaded ${file.name}.` });
+      if (!res.ok) return setStatus({ error: true, text: t('files.refused', { status: res.status }) });
+      setStatus({ text: t('files.uploadedFile', { name: file.name }) });
       form.reset();
       router.refresh();
     } catch {
       // Usually a missing CORS rule on the bucket: the browser blocks the request before it is sent.
-      setStatus({ error: true, text: 'The upload could not reach the bucket. Check its CORS rule allows this dashboard.' });
+      setStatus({ error: true, text: t('files.unreachable') });
     } finally {
       setPending(false);
     }
@@ -52,10 +54,10 @@ export function UploadForm() {
           {chosen ? <FileCheck className="size-6" /> : <Upload className="size-6" />}
         </span>
         <Label htmlFor="file" className="text-base">
-          {chosen ? 'Choose another file' : 'Drop a file here or click to browse'}
+          {chosen ? t('files.chooseAnother') : t('files.dropHere')}
         </Label>
         <p id="file-hint" className="text-sm text-muted-foreground">
-          {chosen ? `${chosen.name} · ${formatSize(chosen.size)}` : 'Any file up to 1 MB.'}
+          {chosen ? `${chosen.name} · ${formatSize(chosen.size)}` : t('files.anyFile')}
         </p>
         <input
           id="file"
@@ -75,7 +77,7 @@ export function UploadForm() {
           {status?.text}
         </p>
         <Button type="submit" disabled={pending} className="ml-auto">
-          {pending ? 'Uploading…' : 'Upload'}
+          {pending ? t('files.uploadingButton') : t('files.upload')}
         </Button>
       </div>
     </form>

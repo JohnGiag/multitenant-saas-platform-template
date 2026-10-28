@@ -15,53 +15,49 @@ import {
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Brand } from '@/components/brand';
+import { LanguageSwitcher } from '@/components/language-switcher';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
+import { getT } from '@/lib/i18n';
 import { cn } from 'cn';
 
 // The landing page signed-out visitors get at / (proxy.ts). Its copy describes this template: a project built on it
-// replaces the constants below with its own product's and keeps the layout.
+// replaces the welcome.* and feature.* rows in `translations` with its own product's and keeps the layout.
 
 export const metadata: Metadata = { title: { absolute: 'Enterprise API Starter' } };
 
 const REPO_URL = 'https://github.com/JohnGiag/multitenant-api-template';
 
-const HERO = {
-  badge: 'Open source · MIT licensed',
-  title: 'The multi-tenant SaaS core',
-  highlight: 'you would build anyway.',
-  text: 'Tenancy, auth, roles, API keys, encrypted tenant secrets, rate limiting, jobs and notifications — already built, tested and documented. Start on your product on day one.',
-};
-
-// `wide` cards span two columns of the grid on large screens.
+// `title` and `text` are message keys. `wide` cards span two columns of the grid on large screens.
 const FEATURES = [
   {
     icon: Building2,
-    title: 'Multi-tenant by default',
-    text: 'Every table carries a tenant ID, every query filters by it, and a test proves tenant A never reads tenant B.',
+    title: 'feature.multiTenant.title',
+    text: 'feature.multiTenant.text',
     wide: true,
   },
-  { icon: Fingerprint, title: 'Pluggable auth', text: 'Built-in JWT with Argon2id, or Clerk. One setting switches them.' },
-  { icon: ShieldCheck, title: 'Role-based access', text: 'Four roles, guards on every route, denied by default.' },
-  { icon: LockKeyhole, title: 'Bring your own keys', text: 'Tenant secrets sealed with AES-256-GCM, never returned by the API.' },
-  { icon: Gauge, title: 'Rate limiting', text: 'Redis sliding windows per tenant, user and tier, with Retry-After.' },
-  { icon: Workflow, title: 'Background jobs', text: 'BullMQ workers with retries, backoff and dead-letter queues.' },
+  { icon: Fingerprint, title: 'feature.auth.title', text: 'feature.auth.text' },
+  { icon: ShieldCheck, title: 'feature.rbac.title', text: 'feature.rbac.text' },
+  { icon: LockKeyhole, title: 'feature.byok.title', text: 'feature.byok.text' },
+  { icon: Gauge, title: 'feature.rateLimit.title', text: 'feature.rateLimit.text' },
+  { icon: Workflow, title: 'feature.jobs.title', text: 'feature.jobs.text' },
   {
     icon: Puzzle,
-    title: 'Plug-and-play modules',
-    text: 'Email, push and file storage are folders. Delete one and the app still compiles; the dashboard hides its settings.',
+    title: 'feature.modules.title',
+    text: 'feature.modules.text',
     wide: true,
   },
-  { icon: Bell, title: 'Notifications', text: 'Real-time SSE, push through FCM and email through Resend.' },
-  { icon: ScrollText, title: 'Audit trail', text: 'Every write logged, with ISO 27001, 27701 and 42001 in mind.' },
-  { icon: CloudUpload, title: 'Direct uploads', text: 'Presigned URLs to R2 or S3: file bytes never touch the API.' },
+  { icon: Bell, title: 'feature.notifications.title', text: 'feature.notifications.text' },
+  { icon: ScrollText, title: 'feature.audit.title', text: 'feature.audit.text' },
+  { icon: CloudUpload, title: 'feature.uploads.title', text: 'feature.uploads.text' },
 ];
 
 const STACK = ['NestJS', 'Next.js', 'PostgreSQL', 'Prisma', 'Redis', 'BullMQ', 'Turborepo', 'Tailwind CSS', 'shadcn/ui'];
 
 const glass = 'border border-white/70 bg-card/60 shadow-xl shadow-primary/5 backdrop-blur-xl dark:border-white/10 dark:bg-card/50';
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const t = await getT();
   return (
     <div className="relative isolate overflow-hidden">
       <Backdrop />
@@ -69,21 +65,22 @@ export default function LandingPage() {
         href="#main"
         className="sr-only rounded-md bg-background px-3 py-2 focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:ring-[3px] focus:ring-ring"
       >
-        Skip to content
+        {t('common.skipToContent')}
       </a>
       <header className={cn('sticky top-0 z-20 border-x-0 border-t-0 shadow-none', glass)}>
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <Brand />
-          <nav aria-label="Main" className="flex items-center gap-2">
+          <nav aria-label={t('nav.main')} className="flex items-center gap-2">
             <Button asChild variant="ghost" className="hidden sm:inline-flex">
-              <a href="#features">Features</a>
+              <a href="#features">{t('welcome.featuresLink')}</a>
             </Button>
             <Button asChild variant="ghost" className="hidden sm:inline-flex">
               <a href={REPO_URL}>GitHub</a>
             </Button>
+            <LanguageSwitcher />
             <ThemeToggle />
             <Button asChild>
-              <Link href="/login">Sign in</Link>
+              <Link href="/login">{t('common.signIn')}</Link>
             </Button>
           </nav>
         </div>
@@ -91,21 +88,21 @@ export default function LandingPage() {
 
       <main id="main" tabIndex={-1} className="outline-none">
         <section className="mx-auto grid max-w-6xl justify-items-center gap-8 px-4 pt-20 pb-16 text-center sm:px-6 sm:pt-28">
-          <p className={cn('rounded-full px-4 py-1.5 text-sm font-medium motion-safe:animate-rise', glass)}>{HERO.badge}</p>
+          <p className={cn('rounded-full px-4 py-1.5 text-sm font-medium motion-safe:animate-rise', glass)}>{t('welcome.badge')}</p>
           <h1 className="max-w-4xl text-4xl font-extrabold tracking-tight text-balance motion-safe:animate-rise motion-safe:[animation-delay:100ms] sm:text-6xl">
-            {HERO.title}{' '}
-            <span className="bg-linear-to-r from-primary to-violet-600 bg-clip-text text-transparent dark:to-violet-400">{HERO.highlight}</span>
+            {t('welcome.title')}{' '}
+            <span className="bg-linear-to-r from-primary to-violet-600 bg-clip-text text-transparent dark:to-violet-400">{t('welcome.highlight')}</span>
           </h1>
-          <p className="max-w-2xl text-lg text-pretty text-muted-foreground motion-safe:animate-rise motion-safe:[animation-delay:200ms]">{HERO.text}</p>
+          <p className="max-w-2xl text-lg text-pretty text-muted-foreground motion-safe:animate-rise motion-safe:[animation-delay:200ms]">{t('welcome.text')}</p>
           <div className="flex flex-wrap justify-center gap-3 motion-safe:animate-rise motion-safe:[animation-delay:300ms]">
             <Button asChild size="lg">
               <Link href="/login">
-                Open the dashboard <ArrowRight aria-hidden />
+                {t('welcome.openDashboard')} <ArrowRight aria-hidden />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className={glass}>
               <a href={REPO_URL}>
-                View on GitHub <ArrowUpRight aria-hidden />
+                {t('welcome.viewGithub')} <ArrowUpRight aria-hidden />
               </a>
             </Button>
           </div>
@@ -115,9 +112,9 @@ export default function LandingPage() {
         <section id="features" aria-labelledby="features-title" className="mx-auto grid max-w-6xl scroll-mt-20 gap-10 px-4 py-20 sm:px-6">
           <div className="reveal grid justify-items-center gap-3 text-center">
             <h2 id="features-title" className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Everything a SaaS needs before its first feature
+              {t('welcome.featuresTitle')}
             </h2>
-            <p className="max-w-2xl text-muted-foreground">Each piece follows one rule set, written down in CLAUDE.md and enforced by tests.</p>
+            <p className="max-w-2xl text-muted-foreground">{t('welcome.featuresText')}</p>
           </div>
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map(({ icon: Icon, title, text, wide }) => (
@@ -135,8 +132,8 @@ export default function LandingPage() {
                 >
                   <Icon className="size-5" />
                 </span>
-                <h3 className="text-lg font-semibold">{title}</h3>
-                <p className="text-muted-foreground">{text}</p>
+                <h3 className="text-lg font-semibold">{t(title)}</h3>
+                <p className="text-muted-foreground">{t(text)}</p>
               </li>
             ))}
           </ul>
@@ -144,7 +141,7 @@ export default function LandingPage() {
 
         <section aria-labelledby="stack-title" className="reveal mx-auto grid max-w-6xl justify-items-center gap-6 px-4 py-12 text-center sm:px-6">
           <h2 id="stack-title" className="text-sm font-semibold tracking-widest text-muted-foreground uppercase">
-            Built on tools you already know
+            {t('welcome.stackTitle')}
           </h2>
           <ul className="flex flex-wrap justify-center gap-3">
             {STACK.map((name) => (
@@ -158,16 +155,16 @@ export default function LandingPage() {
         <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
           <div className={cn('reveal relative grid justify-items-center gap-6 overflow-hidden rounded-3xl px-6 py-16 text-center', glass)}>
             <div aria-hidden className="absolute -top-24 left-1/2 -z-10 size-72 -translate-x-1/2 rounded-full bg-primary/25 blur-3xl" />
-            <h2 className="max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl">Start on your product, not on plumbing.</h2>
-            <p className="max-w-xl text-muted-foreground">Clone the repository, run one command, and sign in to a working dashboard.</p>
+            <h2 className="max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl">{t('welcome.ctaTitle')}</h2>
+            <p className="max-w-xl text-muted-foreground">{t('welcome.ctaText')}</p>
             <div className="flex flex-wrap justify-center gap-3">
               <Button asChild size="lg">
                 <a href={REPO_URL}>
-                  Get the code <ArrowUpRight aria-hidden />
+                  {t('welcome.getCode')} <ArrowUpRight aria-hidden />
                 </a>
               </Button>
               <Button asChild size="lg" variant="outline">
-                <Link href="/login">Sign in</Link>
+                <Link href="/login">{t('common.signIn')}</Link>
               </Button>
             </div>
           </div>
@@ -176,7 +173,7 @@ export default function LandingPage() {
 
       <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 border-t px-4 py-8 text-sm text-muted-foreground sm:px-6">
         <Brand className="text-foreground" />
-        <p>MIT licensed. Built with NestJS and Next.js.</p>
+        <p>{t('welcome.footer')}</p>
       </footer>
     </div>
   );

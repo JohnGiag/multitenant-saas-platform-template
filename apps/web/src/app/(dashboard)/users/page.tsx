@@ -1,5 +1,4 @@
 import type { CursorPage, Invitation, User } from '@repo/shared-types';
-import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
@@ -10,14 +9,15 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, getPrincipal } from '@/lib/api';
 import { CLERK } from '@/lib/auth-mode';
+import { getT, pageTitle } from '@/lib/i18n';
 import { changeRole, invite, removeMember, resendInvitation, revokeInvitation } from './actions';
 
-export const metadata: Metadata = { title: 'Users' };
+export const generateMetadata = pageTitle('nav.users');
 
 const PAGE_SIZE = 50;
 
 export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
-  const me = await getPrincipal();
+  const [me, t] = await Promise.all([getPrincipal(), getT()]);
   if (me.role === 'User') notFound();
   const canManage = me.role !== 'Auditor';
   // Each list pages on its own keyset cursor: ?members=<cursor>&invites=<cursor>.
@@ -41,28 +41,26 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
 
   return (
     <div className="grid max-w-5xl gap-6">
-      <h1 className="text-2xl font-semibold">Users</h1>
+      <h1 className="text-2xl font-semibold">{t('nav.users')}</h1>
 
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>Members</h2>
+            <h2>{t('users.members')}</h2>
           </CardTitle>
           <CardDescription>
-            {CLERK
-              ? 'Members join and leave through your Clerk organization. Roles are managed here and take effect immediately.'
-              : 'Role changes take effect when the member’s current session expires (at most 15 minutes).'}
+            {CLERK ? t('users.membersClerk') : t('users.membersLocal')}
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
-            <TableCaption className="sr-only">Members of this tenant</TableCaption>
+            <TableCaption className="sr-only">{t('users.membersCaption')}</TableCaption>
             <TableHeader>
               <TableRow>
-                <TableHead scope="col">Email</TableHead>
-                <TableHead scope="col">Role</TableHead>
-                <TableHead scope="col">Joined</TableHead>
-                {canManage && <TableHead scope="col">Actions</TableHead>}
+                <TableHead scope="col">{t('common.email')}</TableHead>
+                <TableHead scope="col">{t('common.role')}</TableHead>
+                <TableHead scope="col">{t('users.joined')}</TableHead>
+                {canManage && <TableHead scope="col">{t('common.actions')}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -71,8 +69,8 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
                   <TableCell className="font-medium">{u.email}</TableCell>
                   <TableCell>
                     {canManage && u.role !== 'SuperAdmin' ? (
-                      <ActionForm action={changeRole.bind(null, u.id)} submitLabel="Save" variant="outline" size="sm" className="flex flex-wrap items-center gap-2">
-                        <RoleSelect label={`Role of ${u.email}`} defaultValue={u.role} />
+                      <ActionForm action={changeRole.bind(null, u.id)} submitLabel={t('common.save')} variant="outline" size="sm" className="flex flex-wrap items-center gap-2">
+                        <RoleSelect label={t('users.roleOf', { email: u.email })} defaultValue={u.role} />
                       </ActionForm>
                     ) : (
                       u.role
@@ -86,10 +84,10 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
                       {!CLERK && u.role !== 'SuperAdmin' && u.id !== me.id && (
                         <ActionForm
                           action={removeMember.bind(null, u.id)}
-                          submitLabel="Remove"
+                          submitLabel={t('common.remove')}
                           variant="destructive"
                           size="sm"
-                          confirm={`Remove ${u.email}? Their account is deleted.`}
+                          confirm={t('users.removeConfirm', { email: u.email })}
                           className="flex items-center gap-2"
                         />
                       )}
@@ -99,7 +97,7 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
               ))}
             </TableBody>
           </Table>
-          <Pager next={members.nextCursor && pageLink('members', members.nextCursor)} first={cursor('members') && pageLink('members', null)} label="members" />
+          <Pager next={members.nextCursor && pageLink('members', members.nextCursor)} first={cursor('members') && pageLink('members', null)} label={t('users.members')} />
         </CardContent>
       </Card>
 
@@ -107,32 +105,32 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2>Invitations</h2>
+            <h2>{t('users.invitations')}</h2>
           </CardTitle>
-          <CardDescription>New members join by invitation and choose their own password. Links are valid for 7 days.</CardDescription>
+          <CardDescription>{t('users.invitationsText')}</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6">
           {canManage && (
-            <ActionForm action={invite} submitLabel="Send invitation" className="sm:grid-cols-[1fr_auto] sm:items-end">
-              <Field id="invite-email" name="email" label="Email" type="email" required autoComplete="off" />
+            <ActionForm action={invite} submitLabel={t('users.sendInvitation')} className="sm:grid-cols-[1fr_auto] sm:items-end">
+              <Field id="invite-email" name="email" label={t('common.email')} type="email" required autoComplete="off" />
               <div className="grid gap-2">
-                <Label htmlFor="invite-role">Role</Label>
+                <Label htmlFor="invite-role">{t('common.role')}</Label>
                 <RoleSelect id="invite-role" />
               </div>
             </ActionForm>
           )}
           {invitations.items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending invitations.</p>
+            <p className="text-sm text-muted-foreground">{t('users.noInvitations')}</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
-                <TableCaption className="sr-only">Pending invitations</TableCaption>
+                <TableCaption className="sr-only">{t('users.invitationsCaption')}</TableCaption>
                 <TableHeader>
                   <TableRow>
-                    <TableHead scope="col">Email</TableHead>
-                    <TableHead scope="col">Role</TableHead>
-                    <TableHead scope="col">Expires</TableHead>
-                    {canManage && <TableHead scope="col">Actions</TableHead>}
+                    <TableHead scope="col">{t('common.email')}</TableHead>
+                    <TableHead scope="col">{t('common.role')}</TableHead>
+                    <TableHead scope="col">{t('users.expires')}</TableHead>
+                    {canManage && <TableHead scope="col">{t('common.actions')}</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -146,13 +144,13 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
                       {canManage && (
                         <TableCell>
                           <div className="flex flex-wrap gap-2">
-                            <ActionForm action={resendInvitation.bind(null, i.id)} submitLabel="Resend" variant="outline" size="sm" className="flex items-center gap-2" />
+                            <ActionForm action={resendInvitation.bind(null, i.id)} submitLabel={t('users.resend')} variant="outline" size="sm" className="flex items-center gap-2" />
                             <ActionForm
                               action={revokeInvitation.bind(null, i.id)}
-                              submitLabel="Revoke"
+                              submitLabel={t('common.revoke')}
                               variant="destructive"
                               size="sm"
-                              confirm={`Revoke the invitation for ${i.email}?`}
+                              confirm={t('users.revokeConfirm', { email: i.email })}
                               className="flex items-center gap-2"
                             />
                           </div>
@@ -164,7 +162,7 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
               </Table>
             </div>
           )}
-          <Pager next={invitations.nextCursor && pageLink('invites', invitations.nextCursor)} first={cursor('invites') && pageLink('invites', null)} label="invitations" />
+          <Pager next={invitations.nextCursor && pageLink('invites', invitations.nextCursor)} first={cursor('invites') && pageLink('invites', null)} label={t('users.invitations')} />
         </CardContent>
       </Card>
       )}

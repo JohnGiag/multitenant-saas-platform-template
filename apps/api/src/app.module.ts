@@ -9,6 +9,7 @@ import { AuditInterceptor } from './modules/audit/presentation/audit.interceptor
 import { AuthModule } from './modules/auth/auth.module.js';
 import { AccessGuard } from './modules/auth/presentation/access.guard.js';
 import { AuthGuard } from './modules/auth/presentation/auth.guard.js';
+import { I18nModule } from './modules/i18n/i18n.module.js';
 import { IntegrationsModule } from './modules/integrations/integrations.module.js';
 import { JobsModule } from './modules/jobs/jobs.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
@@ -38,6 +39,7 @@ export class AppModule {
         JobsModule,
         NotificationsModule,
         AuditModule,
+        I18nModule,
         SystemModule.register(optionalModules),
         ...optionalModules.map((m) => m.module),
       ],
