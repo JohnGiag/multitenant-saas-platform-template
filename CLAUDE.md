@@ -105,7 +105,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 
 ## Frontend (`apps/web`)
 
-- Must meet **WCAG 2.1/2.2 AA**: semantic HTML, Radix/shadcn primitives, visible focus, full keyboard operation, labelled form controls, AA colour contrast, and `aria-live` for async status.
+- Must meet **WCAG 2.1/2.2 AA**: semantic HTML, Radix/shadcn primitives, visible focus, full keyboard operation, labelled form controls, AA colour contrast, and `aria-live` for async status. Every new page goes into `e2e/a11y.spec.ts` (axe), and new flows get a Playwright test in `apps/web/e2e`.
 - The browser never calls the API. Server components and server actions call it through `lib/api.ts` (server-only), with the token from the `httpOnly` session cookie. Never expose the token or `API_URL` to client code.
 - Feature settings pages render only when `/v1/system/capabilities` reports the feature.
 - API types and validation come from `packages/shared-types`. Don't duplicate DTOs.
@@ -115,4 +115,4 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - TypeScript `strict` everywhere. Extend `tsconfig.base.json`.
 - API routes are versioned under `/v1`.
 - Database columns use `snake_case` (mapped through Prisma `@map`). TypeScript uses `camelCase`.
-- Root scripts (`pnpm build | dev | typecheck | test`) run through Turborepo.
+- Root scripts (`pnpm build | dev | typecheck | test | test:e2e`) run through Turborepo.

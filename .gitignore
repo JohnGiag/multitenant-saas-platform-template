@@ -11,3 +11,8 @@ coverage/
 apps/api/src/generated/
 next-env.d.ts
 *.tsbuildinfo
+
+# Playwright (apps/web/e2e)
+test-results/
+playwright-report/
+apps/web/e2e/.auth/

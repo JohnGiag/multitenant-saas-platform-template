@@ -50,6 +50,7 @@ Sign in at http://localhost:3001 as `superadmin@example.com` (Platform tenant), 
 | `pnpm build` | Builds every package |
 | `pnpm typecheck` | Type-checks every package |
 | `pnpm test` | Builds, then runs all tests. API tests need the database running and `.env` set up |
+| `pnpm test:e2e` | Dashboard end-to-end tests (Playwright, Chromium): builds the API, starts it and a local-mode build of the dashboard on ports 3100/3101, signs in as each role, runs the main flows and checks every page with axe (WCAG 2.2 AA). Needs the database and Redis running; seeds its own tenants and deletes them afterwards. First time: `pnpm --filter @repo/web exec playwright install chromium` |
 | `pnpm coverage` | Same as `pnpm test` for the API, plus a line/branch/function coverage report per source file |
 | `pnpm --filter @repo/api test:live` | Opt-in: sends one real email with `RESEND_PLATFORM_KEY` to Resend's `delivered@resend.dev` test address (no real inbox); with a dev-only full-access key in `RESEND_PLATFORM_FULL_ACCESS_KEY` (never used by the app, not in `.env.example`) also confirms delivery through Resend's API. `pnpm test` never sends real email |
 | `pnpm --filter @repo/api db:migrate` | Creates and applies a migration after a schema change (development) |

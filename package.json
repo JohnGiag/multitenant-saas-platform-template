@@ -11,7 +11,8 @@
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "coverage": "turbo run coverage"
+    "coverage": "turbo run coverage",
+    "test:e2e": "turbo run test:e2e"
   },
   "devDependencies": {
     "turbo": "^2.11.10",
