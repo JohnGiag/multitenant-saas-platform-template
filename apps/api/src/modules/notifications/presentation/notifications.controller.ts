@@ -10,12 +10,14 @@ import {
   type MessageEvent,
 } from '@nestjs/common';
 import {
+  SendNotificationResultSchema,
   SendNotificationSchema,
   type Principal,
   type SendNotificationDto,
   type SendNotificationResult,
 } from '@repo/shared-types';
 import { Observable } from 'rxjs';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { CurrentPrincipal, Roles } from '../../auth/presentation/decorators.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
@@ -27,6 +29,10 @@ export class NotificationsController {
 
   // A tenant's own admins only: SuperAdmin manages tenants and their users, not their messaging.
   @Roles('TenantAdmin')
+  @ApiDoc(
+    'Send a notification to a member: in real time, and queued for each email or push channel the tenant has set up',
+    SendNotificationResultSchema,
+  )
   @Post()
   @HttpCode(202)
   async send(
@@ -41,6 +47,7 @@ export class NotificationsController {
   // The caller's own notifications, so the principal (not @TenantId) decides whose stream this is.
   // Browsers' EventSource cannot send Authorization headers: use a fetch-based SSE client.
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
+  @ApiDoc("The caller's own notifications, live (users only, not API keys; at most 5 open streams per instance)")
   @Sse('stream')
   stream(@CurrentPrincipal() principal: Principal): Observable<MessageEvent> {
     if (principal.kind !== 'user') throw new ForbiddenException('Only users receive notifications');

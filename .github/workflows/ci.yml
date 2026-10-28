@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch or pull request cancels the run it replaces.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The same images as docker-compose.yml; throwaway credentials, reachable only from this job.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: enterprise_api
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app -d enterprise_api"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    # No .env files in CI: the API, its tests, Prisma and the e2e servers read these instead.
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/enterprise_api?schema=public
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v5
+      # Installs the pnpm version pinned in package.json (packageManager).
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate this run's secrets
+        run: |
+          jwt=$(openssl rand -base64 48); echo "::add-mask::$jwt"; echo "JWT_SECRET=$jwt" >> "$GITHUB_ENV"
+          byok=$(openssl rand -base64 32); echo "::add-mask::$byok"; echo "BYOK_MASTER_KEY=$byok" >> "$GITHUB_ENV"
+
+      - name: Apply migrations
+        run: pnpm --filter @repo/api db:deploy
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      # Builds everything, then unit and API end-to-end tests (Postgres and Redis above).
+      - run: pnpm test
+
+      - name: Install Chromium for Playwright
+        run: pnpm --filter @repo/web exec playwright install --with-deps chromium
+      - name: Dashboard end-to-end tests
+        run: pnpm test:e2e
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7

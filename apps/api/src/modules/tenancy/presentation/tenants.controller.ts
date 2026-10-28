@@ -18,7 +18,9 @@ import { ConfigService } from '@nestjs/config';
 import {
   AdminUpdateTenantSchema,
   CreateTenantSchema,
+  cursorPage,
   TenantPageQuerySchema,
+  TenantSchema,
   UpdateTenantSchema,
   type AdminUpdateTenantDto,
   type CreateTenantDto,
@@ -27,6 +29,7 @@ import {
   type TenantPageQuery,
   type UpdateTenantDto,
 } from '@repo/shared-types';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Roles } from '../../auth/presentation/decorators.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../domain/ports/tenant.repository.js';
@@ -42,6 +45,7 @@ export class TenantsController {
 
   // Own tenant (or the X-Tenant-Id target for a SuperAdmin).
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
+  @ApiDoc('The current tenant (yours, or the X-Tenant-Id one for a SuperAdmin)', TenantSchema)
   @Get('current')
   async current(@TenantId() tenantId: string): Promise<Tenant> {
     return this.found(await this.tenants.findById(tenantId));
@@ -49,6 +53,7 @@ export class TenantsController {
 
   @Roles('SuperAdmin', 'TenantAdmin')
   @LocalAuthOnly()
+  @ApiDoc('Rename the current tenant', TenantSchema)
   @Patch('current')
   async updateCurrent(
     @TenantId() tenantId: string,
@@ -60,18 +65,21 @@ export class TenantsController {
   // Cross-tenant operations below: SuperAdmin only.
   @Roles('SuperAdmin')
   @LocalAuthOnly()
+  @ApiDoc('Create a tenant (free tier); invite its first TenantAdmin next', TenantSchema)
   @Post()
   create(@Body(new ZodValidationPipe(CreateTenantSchema)) body: CreateTenantDto): Promise<Tenant> {
     return this.tenants.create(body);
   }
 
   @Roles('SuperAdmin')
+  @ApiDoc('List every tenant, oldest first', cursorPage(TenantSchema))
   @Get()
   list(@Query(new ZodValidationPipe(TenantPageQuerySchema)) query: TenantPageQuery): Promise<CursorPage<Tenant>> {
     return this.tenants.list(query);
   }
 
   @Roles('SuperAdmin')
+  @ApiDoc("Rename a tenant or change its tier (in Clerk mode, the tier only: the name is the organization's)", TenantSchema)
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -87,6 +95,7 @@ export class TenantsController {
 
   @Roles('SuperAdmin')
   @LocalAuthOnly()
+  @ApiDoc('Delete a tenant and everything it owns: users, keys, integrations, audit records, jobs and files. Never the platform tenant (403)')
   @Delete(':id')
   @HttpCode(204)
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {

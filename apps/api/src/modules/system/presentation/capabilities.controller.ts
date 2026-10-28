@@ -1,6 +1,7 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { CapabilityResponse } from '@repo/shared-types';
+import { CapabilityResponseSchema, type CapabilityResponse } from '@repo/shared-types';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { Roles } from '../../auth/presentation/decorators.js';
 import { INTEGRATION_SERVICE, type IntegrationService } from '../../integrations/domain/ports/integration.service.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
@@ -15,6 +16,7 @@ export class CapabilitiesController {
   ) {}
 
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
+  @ApiDoc('Installed optional modules, and whether each is enabled for the current tenant', CapabilityResponseSchema)
   @Get('capabilities')
   async capabilities(@TenantId() tenantId: string): Promise<CapabilityResponse> {
     const providers = this.modules.flatMap((m) => (m.integration ? [m.integration] : []));

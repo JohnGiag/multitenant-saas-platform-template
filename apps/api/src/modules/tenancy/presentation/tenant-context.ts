@@ -44,9 +44,11 @@ export class TenantContextGuard implements CanActivate {
 }
 
 // Throws instead of returning undefined: Prisma drops `where: { tenantId: undefined }`,
-// which would silently query every tenant.
-export const TenantId = createParamDecorator((_: unknown, ctx: ExecutionContext): string => {
+// which would silently query every tenant. Exported so the OpenAPI document can tell which routes honour X-Tenant-Id.
+export function tenantIdOf(_: unknown, ctx: ExecutionContext): string {
   const tenantId = ctx.switchToHttp().getRequest<TenantRequest>().tenantId;
   if (!tenantId) throw new Error('Tenant context missing: @TenantId() used on a public route?');
   return tenantId;
-});
+}
+
+export const TenantId = createParamDecorator(tenantIdOf);

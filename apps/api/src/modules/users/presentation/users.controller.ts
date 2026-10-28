@@ -18,8 +18,10 @@ import {
 } from '@nestjs/common';
 import {
   ChangePasswordSchema,
+  cursorPage,
   UpdateUserSchema,
   UserPageQuerySchema,
+  UserSchema,
   type ChangePasswordDto,
   type CursorPage,
   type Principal,
@@ -27,6 +29,7 @@ import {
   type User,
   type UserPageQuery,
 } from '@repo/shared-types';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { CurrentPrincipal, Roles, SelfService } from '../../auth/presentation/decorators.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
@@ -47,6 +50,7 @@ export class UsersController {
   ) {}
 
   @Roles('SuperAdmin', 'TenantAdmin', 'Auditor')
+  @ApiDoc('List the members of the current tenant', cursorPage(UserSchema))
   @Get()
   list(
     @TenantId() tenantId: string,
@@ -55,6 +59,7 @@ export class UsersController {
     return this.users.list(tenantId, query);
   }
 
+  @ApiDoc("Change a member's role (never to or from SuperAdmin; a tenant keeps at least one TenantAdmin, else 409)", UserSchema)
   @Patch(':id')
   async update(
     @TenantId() tenantId: string,
@@ -65,6 +70,7 @@ export class UsersController {
   }
 
   @LocalAuthOnly()
+  @ApiDoc('Remove a member and their account (never the last TenantAdmin)')
   @Delete(':id')
   @HttpCode(204)
   async remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
@@ -75,6 +81,7 @@ export class UsersController {
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
   @SelfService()
   @LocalAuthOnly()
+  @ApiDoc('Change your own password; wrong guesses count towards the sign-in limit')
   @Put('me/password')
   @HttpCode(204)
   async changePassword(

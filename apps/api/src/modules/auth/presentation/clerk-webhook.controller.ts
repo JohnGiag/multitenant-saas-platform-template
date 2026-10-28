@@ -9,6 +9,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ApiHeader } from '@nestjs/swagger';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { z } from 'zod';
 import { verifyWebhookSignature } from '../domain/webhook-signature.js';
 import { ClerkWebhookHandler } from '../infrastructure/clerk-webhook.handler.js';
@@ -32,6 +34,10 @@ export class ClerkWebhookController {
 
   // Public: Clerk calls it through Svix, and the signature is the credential. Exists only in Clerk mode.
   @Public()
+  @ApiDoc('Clerk webhook (Clerk mode only): mirrors organizations, memberships and users. Signed by Svix')
+  @ApiHeader({ name: 'svix-id', required: true })
+  @ApiHeader({ name: 'svix-timestamp', required: true, description: 'Unix seconds; refused when more than 5 minutes off' })
+  @ApiHeader({ name: 'svix-signature', required: true, description: 'HMAC-SHA256 of the raw body, keyed with CLERK_WEBHOOK_SECRET' })
   @Post('webhook')
   @HttpCode(204)
   async receive(@Req() req: WebhookRequest, @Body() body: unknown): Promise<void> {

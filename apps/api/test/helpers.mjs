@@ -18,6 +18,8 @@ const CLIENT_IP = randomIp();
 
 // The suite tests local mode whatever .env says; clerk.e2e and auth-provider.e2e switch it themselves.
 process.env.AUTH_PROVIDER = 'local';
+// No /docs by default: fixture modules' controllers are not documented. openapi.e2e turns it on.
+process.env.API_DOCS = 'false';
 
 // The offline suite never sends real email: tests stub Resend, and this fake key makes any request a
 // stub misses fail instead of sending. Only test/live/ uses the real RESEND_PLATFORM_KEY.

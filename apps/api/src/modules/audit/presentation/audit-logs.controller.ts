@@ -1,6 +1,7 @@
 import { Controller, ForbiddenException, Get, Inject, Query } from '@nestjs/common';
-import { AuditLogFilterSchema, pageQuery, type AuditLogEntry, type CursorPage, type Principal } from '@repo/shared-types';
+import { AuditLogEntrySchema, AuditLogFilterSchema, cursorPage, pageQuery, type AuditLogEntry, type CursorPage, type Principal } from '@repo/shared-types';
 import { z } from 'zod';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { keysetCursorSchema } from '../../../common/keyset.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { CurrentPrincipal, Roles } from '../../auth/presentation/decorators.js';
@@ -17,6 +18,7 @@ export class AuditLogsController {
   // A SuperAdmin reads only the platform tenant's trail, which holds all its own actions (with the tenant it
   // acted on); another tenant's trail is that tenant's business, so X-Tenant-Id gets 403.
   @Roles('SuperAdmin', 'TenantAdmin', 'Auditor')
+  @ApiDoc('List the audit log, newest first (a SuperAdmin reads the platform log)', cursorPage(AuditLogEntrySchema))
   @Get()
   list(
     @TenantId() tenantId: string,

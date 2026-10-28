@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, ForbiddenException, HttpCode, Param, Post } from '@nestjs/common';
 import { RegisterPushDeviceSchema, type Principal, type RegisterPushDeviceDto } from '@repo/shared-types';
+import { ApiDoc } from '../../common/api-doc.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { CurrentPrincipal, Roles } from '../../modules/auth/presentation/decorators.js';
@@ -10,6 +11,7 @@ import { CurrentPrincipal, Roles } from '../../modules/auth/presentation/decorat
 export class PushDevicesController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @ApiDoc("Register this device's FCM token for your push notifications (a token moves to whoever registers it last)")
   @Post()
   @HttpCode(204)
   async register(
@@ -21,6 +23,7 @@ export class PushDevicesController {
     await this.prisma.pushDevice.upsert({ where: { token }, create: { token, ...owner }, update: owner });
   }
 
+  @ApiDoc('Unregister one of your devices')
   @Delete(':token')
   @HttpCode(204)
   async unregister(@CurrentPrincipal() principal: Principal, @Param('token') token: string): Promise<void> {

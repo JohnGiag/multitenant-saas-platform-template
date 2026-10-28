@@ -114,5 +114,6 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 
 - TypeScript `strict` everywhere. Extend `tsconfig.base.json`.
 - API routes are versioned under `/v1`.
+- Every route carries `@ApiDoc(summary, responseSchema)` (`common/api-doc.ts`; `null` for an empty body, omitted only for `204`). The OpenAPI document at `/docs` reads everything else from the route (Zod pipes, `@Roles`, `@Public`, `@LocalAuthOnly`, `@HttpCode`), and a route without `@ApiDoc` stops it from building (`test/openapi.e2e.test.mjs`). Validate input with `new ZodValidationPipe(Schema)` so it is documented too.
 - Database columns use `snake_case` (mapped through Prisma `@map`). TypeScript uses `camelCase`.
 - Root scripts (`pnpm build | dev | typecheck | test | test:e2e`) run through Turborepo.

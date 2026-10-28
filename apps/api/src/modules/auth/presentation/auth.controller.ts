@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Post, Res, UnauthorizedException } from '@nestjs/common';
-import { SignInSchema, type Principal, type SignInDto, type SignInResult } from '@repo/shared-types';
+import { PrincipalSchema, SignInResultSchema, SignInSchema, type Principal, type SignInDto, type SignInResult } from '@repo/shared-types';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
 import { loginAccountKey, loginEmailKey } from '../../rate-limit/domain/rate-limit-policy.js';
@@ -17,6 +18,10 @@ export class AuthController {
 
   @Public()
   @LocalAuthOnly()
+  @ApiDoc(
+    'Sign in with email and password. If the password matches accounts in several tenants, the answer lists them: sign in again with the chosen `tenantId`',
+    SignInResultSchema,
+  )
   @Post('login')
   @HttpCode(200)
   async login(
@@ -34,6 +39,7 @@ export class AuthController {
   }
 
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
+  @ApiDoc('The caller: user or API key, tenant, role and tier', PrincipalSchema)
   @Get('me')
   me(@CurrentPrincipal() principal: Principal): Principal {
     return principal;

@@ -14,9 +14,12 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  AcceptedInvitationSchema,
   AcceptInvitationSchema,
   CreateInvitationSchema,
+  cursorPage,
   InvitationPageQuerySchema,
+  InvitationSchema,
   type AcceptedInvitation,
   type AcceptInvitationDto,
   type CreateInvitationDto,
@@ -24,6 +27,7 @@ import {
   type Invitation,
   type InvitationPageQuery,
 } from '@repo/shared-types';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Public, Roles } from '../../auth/presentation/decorators.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
@@ -40,6 +44,7 @@ export class InvitationsController {
   constructor(@Inject(INVITATION_SERVICE) private readonly invitations: InvitationService) {}
 
   @Roles('SuperAdmin', 'TenantAdmin', 'Auditor')
+  @ApiDoc('List pending invitations', cursorPage(InvitationSchema))
   @Get()
   list(
     @TenantId() tenantId: string,
@@ -48,6 +53,10 @@ export class InvitationsController {
     return this.invitations.list(tenantId, query);
   }
 
+  @ApiDoc(
+    'Invite someone: emails a single-use link valid for 7 days, always with the platform credentials. Re-inviting the same email replaces the pending invitation',
+    InvitationSchema,
+  )
   @Post()
   async invite(
     @TenantId() tenantId: string,
@@ -58,6 +67,7 @@ export class InvitationsController {
     return result;
   }
 
+  @ApiDoc('Send a fresh link; the old one stops working', InvitationSchema)
   @Post(':id/resend')
   @HttpCode(200)
   async resend(
@@ -69,6 +79,7 @@ export class InvitationsController {
     return invitation;
   }
 
+  @ApiDoc('Revoke a pending invitation')
   @Delete(':id')
   @HttpCode(204)
   async revoke(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
@@ -77,6 +88,7 @@ export class InvitationsController {
 
   // Public: the invitee has no account yet. The token from the email is the credential.
   @Public()
+  @ApiDoc("Accept an invitation with the emailed token and choose a password: creates the account", AcceptedInvitationSchema)
   @Post('accept')
   async accept(
     @Body(new ZodValidationPipe(AcceptInvitationSchema)) { token, password }: AcceptInvitationDto,

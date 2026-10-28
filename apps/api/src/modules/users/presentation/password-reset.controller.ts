@@ -5,6 +5,7 @@ import {
   type PasswordResetConfirmDto,
   type PasswordResetRequestDto,
 } from '@repo/shared-types';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Public } from '../../auth/presentation/decorators.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
@@ -26,6 +27,10 @@ export class PasswordResetController {
   // Always 202, sent before any lookup or email: neither the answer nor its timing tells whether
   // the email has accounts. Limited per email, so nobody can flood an inbox.
   @Public()
+  @ApiDoc(
+    'Request password reset links: always 202, whether or not the email has accounts. Each account with it gets a 1-hour link naming its tenant',
+    null,
+  )
   @Post()
   @HttpCode(202)
   async request(
@@ -42,6 +47,7 @@ export class PasswordResetController {
   }
 
   @Public()
+  @ApiDoc('Set a new password with the emailed token; also lifts any sign-in lockout')
   @Post('confirm')
   @HttpCode(204)
   async confirm(

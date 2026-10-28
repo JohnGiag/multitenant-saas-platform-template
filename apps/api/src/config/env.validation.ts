@@ -14,6 +14,9 @@ export function validateEnv(env: Record<string, unknown>): Record<string, unknow
       throw new Error('AUTH_PROVIDER=clerk needs CLERK_WEBHOOK_SECRET: the endpoint signing secret (whsec_…)');
     }
   }
+  if (env.API_DOCS !== undefined && env.API_DOCS !== '' && env.API_DOCS !== 'true' && env.API_DOCS !== 'false') {
+    throw new Error(`API_DOCS must be "true" or "false", got "${String(env.API_DOCS)}"`);
+  }
   // Anyone holding it can pick their own rate-limit bucket on public routes, so it must not be guessable.
   const proxySecret = env.DASHBOARD_PROXY_SECRET;
   if (typeof proxySecret === 'string' && proxySecret !== '' && proxySecret.length < 32) {

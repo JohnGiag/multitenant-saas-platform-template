@@ -1,13 +1,16 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Put, Query } from '@nestjs/common';
 import {
+  cursorPage,
   IntegrationPageQuerySchema,
   IntegrationProviderSchema,
+  TenantIntegrationSchema,
   UpsertTenantIntegrationSchema,
   type CursorPage,
   type IntegrationPageQuery,
   type TenantIntegration,
   type UpsertTenantIntegrationDto,
 } from '@repo/shared-types';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Roles } from '../../auth/presentation/decorators.js';
 import { OPTIONAL_MODULES, type OptionalModule } from '../../system/domain/optional-module.js';
@@ -27,6 +30,7 @@ export class IntegrationsController {
   ) {}
 
   @Roles('TenantAdmin', 'Auditor')
+  @ApiDoc("List the tenant's integrations, masked values only", cursorPage(TenantIntegrationSchema))
   @Get()
   list(
     @TenantId() tenantId: string,
@@ -35,6 +39,10 @@ export class IntegrationsController {
     return this.integrations.list(tenantId, query);
   }
 
+  @ApiDoc(
+    "Set a provider's config (BYOK), stored encrypted with AES-256-GCM. Only providers used by an installed module; others answer 404",
+    TenantIntegrationSchema,
+  )
   @Put(':provider')
   upsert(
     @TenantId() tenantId: string,
@@ -49,6 +57,7 @@ export class IntegrationsController {
   }
 
   // Not restricted to installed modules, so secrets of an uninstalled module can still be removed.
+  @ApiDoc("Remove a provider's config and its secrets")
   @Delete(':provider')
   @HttpCode(204)
   async remove(@TenantId() tenantId: string, @Param('provider', ProviderPipe) provider: string): Promise<void> {

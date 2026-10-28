@@ -12,7 +12,10 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiKeySummarySchema,
   CreateApiKeySchema,
+  CreatedApiKeySchema,
+  cursorPage,
   pageQuery,
   type ApiKeySummary,
   type CreateApiKeyDto,
@@ -20,6 +23,7 @@ import {
   type CursorPage,
 } from '@repo/shared-types';
 import { z } from 'zod';
+import { ApiDoc } from '../../../common/api-doc.js';
 import { keysetCursorSchema } from '../../../common/keyset.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
@@ -35,6 +39,7 @@ export class ApiKeysController {
   constructor(@Inject(API_KEY_SERVICE) private readonly apiKeys: ApiKeyService) {}
 
   @Roles('TenantAdmin', 'Auditor')
+  @ApiDoc("List the tenant's API keys, newest first (no secrets)", cursorPage(ApiKeySummarySchema))
   @Get()
   list(
     @TenantId() tenantId: string,
@@ -43,6 +48,7 @@ export class ApiKeysController {
     return this.apiKeys.list(tenantId, query);
   }
 
+  @ApiDoc('Create an API key: `key` is returned this once, only its hash is stored', CreatedApiKeySchema)
   @Post()
   create(
     @TenantId() tenantId: string,
@@ -51,6 +57,7 @@ export class ApiKeysController {
     return this.apiKeys.create(tenantId, body);
   }
 
+  @ApiDoc('Revoke an API key; it stops working at once')
   @Delete(':id')
   @HttpCode(204)
   async revoke(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {

@@ -1,6 +1,7 @@
 {
   "name": "enterprise-api-starter",
   "private": true,
+  "license": "MIT",
   "packageManager": "pnpm@10.12.1",
   "engines": {
     "node": ">=22"
