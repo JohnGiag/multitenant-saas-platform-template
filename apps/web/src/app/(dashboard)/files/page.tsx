@@ -6,14 +6,13 @@ import { Pager } from '@/components/pager';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, getCapabilities, getPrincipal } from '@/lib/api';
+import { formatSize } from '@/lib/format-size';
 import { deleteFile, downloadFile } from './actions';
 import { UploadForm } from './upload-form';
 
 export const metadata: Metadata = { title: 'Files' };
 
 const PAGE_SIZE = 50;
-
-const formatSize = (bytes: number) => (bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`);
 
 export default async function FilesPage({ searchParams }: PageProps<'/files'>) {
   const me = await getPrincipal();

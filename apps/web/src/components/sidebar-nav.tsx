@@ -34,11 +34,11 @@ export function SidebarNav({ role, features }: { role: Role; features: string[] 
                 href={href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm outline-none hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-ring',
-                  active && 'bg-sidebar-accent font-medium',
+                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-[3px] focus-visible:ring-ring',
+                  active && 'bg-sidebar-accent font-semibold text-sidebar-accent-foreground hover:text-sidebar-accent-foreground',
                 )}
               >
-                <Icon aria-hidden className="size-4" />
+                <Icon aria-hidden className="size-4 shrink-0" />
                 {label}
               </Link>
             </li>

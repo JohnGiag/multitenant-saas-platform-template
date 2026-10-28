@@ -42,7 +42,13 @@ export async function signIn(page: Page, email: string, password = fixtures().pa
 }
 
 // WCAG 2.0, 2.1 and 2.2, levels A and AA (CLAUDE.md). One line per violation, so a failure reads as a list.
+// Checks the light theme (Playwright's default), then the dark one. Motion off, so axe never measures a colour
+// halfway through a fade, or a section that fades in only once scrolled to.
 export async function expectAccessible(page: Page): Promise<void> {
-  const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
-  expect(violations.map((v) => `${v.id} (${v.impact}): ${v.help} at ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+  await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' });
+  for (const dark of [false, true]) {
+    await page.evaluate((on) => document.documentElement.classList.toggle('dark', on), dark);
+    const { violations } = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(violations.map((v) => `${dark ? 'dark' : 'light'} ${v.id} (${v.impact}): ${v.help} at ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+  }
 }

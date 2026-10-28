@@ -10,7 +10,7 @@ const PAGES: Record<Role, string[]> = {
 };
 
 test.describe('signed out', () => {
-  for (const path of ['/login', '/reset-password', '/reset-password?token=e2e', '/accept-invitation?token=e2e']) {
+  for (const path of ['/', '/login','/reset-password', '/reset-password?token=e2e', '/accept-invitation?token=e2e']) {
     test(path, async ({ page }) => {
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();

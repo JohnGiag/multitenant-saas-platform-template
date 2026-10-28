@@ -1,8 +1,10 @@
 import { OrganizationSwitcher, UserButton } from '@clerk/nextjs';
 import type { CursorPage, Tenant } from '@repo/shared-types';
 import type { ReactNode } from 'react';
+import { Brand } from '@/components/brand';
 import { SidebarNav } from '@/components/sidebar-nav';
 import { TenantSwitcher } from '@/components/tenant-switcher';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api, getCapabilities, getCurrentTenant, getPrincipal } from '@/lib/api';
@@ -23,12 +25,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       >
         Skip to content
       </a>
-      <aside className="border-b bg-sidebar text-sidebar-foreground md:w-60 md:shrink-0 md:border-r md:border-b-0">
-        <p className="px-6 py-4 font-semibold">Admin</p>
+      <aside className="border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:h-dvh md:w-64 md:shrink-0 md:overflow-y-auto md:border-r md:border-b-0">
+        <Brand className="px-6 py-5" />
         <SidebarNav role={me.role} features={features} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-3">
+        <header className="sticky top-0 z-10 flex min-h-16 flex-wrap items-center justify-between gap-4 border-b bg-background/85 px-4 py-3 backdrop-blur sm:px-6 lg:px-10">
           {/* A SuperAdmin picks tenants with X-Tenant-Id; in Clerk mode everyone else switches the active organization. */}
           {me.role === 'SuperAdmin' ? (
             <SuperAdminTenants ownTenantId={me.tenantId} />
@@ -39,6 +41,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           )}
           <div className="flex items-center gap-3">
             <Badge variant="secondary">{me.role}</Badge>
+            <ThemeToggle />
             {/* Clerk's account menu: profile, password, sessions, sign out. */}
             {CLERK ? (
               <UserButton />
@@ -51,7 +54,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             )}
           </div>
         </header>
-        <main id="main" tabIndex={-1} className="flex-1 p-6 outline-none">
+        {/* *:mx-auto: each page's column sits centred in the space beside the sidebar. */}
+        <main id="main" tabIndex={-1} className="flex-1 px-4 py-8 outline-none *:mx-auto *:w-full sm:px-6 lg:px-10">
           {children}
         </main>
       </div>

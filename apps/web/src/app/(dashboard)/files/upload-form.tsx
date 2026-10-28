@@ -1,17 +1,20 @@
 'use client';
 
 import { MAX_UPLOAD_BYTES } from '@repo/shared-types';
+import { FileCheck, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { formatSize } from '@/lib/format-size';
 import { createUpload } from './actions';
 
 export function UploadForm() {
   const router = useRouter();
   const [status, setStatus] = useState<{ error?: boolean; text: string }>();
   const [pending, setPending] = useState(false);
+  const [chosen, setChosen] = useState<File>();
+  const [dragging, setDragging] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,20 +42,42 @@ export function UploadForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-4" aria-busy={pending}>
-      <div className="grid gap-2">
-        <Label htmlFor="file">File</Label>
-        <Input id="file" name="file" type="file" required aria-describedby="file-hint" />
+    <form onSubmit={onSubmit} onReset={() => setChosen(undefined)} className="grid gap-4" aria-busy={pending}>
+      {/* The real input covers the whole zone (invisible), so clicks, drops, keyboard and screen readers all use it. */}
+      <div
+        data-dragging={dragging || undefined}
+        className="relative grid justify-items-center gap-3 rounded-xl border-2 border-dashed border-input px-6 py-10 text-center transition-colors hover:border-primary hover:bg-accent/50 has-focus-visible:border-ring has-focus-visible:ring-[3px] has-focus-visible:ring-ring data-dragging:border-primary data-dragging:bg-accent"
+      >
+        <span aria-hidden className="grid size-12 place-items-center rounded-full bg-sidebar-accent text-sidebar-accent-foreground">
+          {chosen ? <FileCheck className="size-6" /> : <Upload className="size-6" />}
+        </span>
+        <Label htmlFor="file" className="text-base">
+          {chosen ? 'Choose another file' : 'Drop a file here or click to browse'}
+        </Label>
         <p id="file-hint" className="text-sm text-muted-foreground">
-          Up to 1 MB.
+          {chosen ? `${chosen.name} · ${formatSize(chosen.size)}` : 'Any file up to 1 MB.'}
         </p>
+        <input
+          id="file"
+          name="file"
+          type="file"
+          required
+          aria-describedby="file-hint"
+          className="absolute inset-0 size-full cursor-pointer opacity-0"
+          onChange={(e) => setChosen(e.currentTarget.files?.[0])}
+          onDragEnter={() => setDragging(true)}
+          onDragLeave={() => setDragging(false)}
+          onDrop={() => setDragging(false)}
+        />
       </div>
-      <p aria-live="polite" className={status?.error ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
-        {status?.text}
-      </p>
-      <Button type="submit" disabled={pending} className="justify-self-start">
-        {pending ? 'Uploading…' : 'Upload'}
-      </Button>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <p aria-live="polite" className={status?.error ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
+          {status?.text}
+        </p>
+        <Button type="submit" disabled={pending} className="ml-auto">
+          {pending ? 'Uploading…' : 'Upload'}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -10,8 +10,15 @@ test('a member signs in with email and password, and signs out', async ({ page }
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
   // The session is gone: the dashboard sends us back.
-  await page.goto('/');
+  await page.goto('/settings');
   await expect(page).toHaveURL(/\/login$/);
+});
+
+test('signed out, / is the landing page, which leads to sign-in', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
 });
 
 test('a wrong password is announced on the form', async ({ page }) => {
