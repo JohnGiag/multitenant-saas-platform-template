@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, getPrincipal } from '@/lib/api';
+import { CLERK } from '@/lib/auth-mode';
 import { changeRole, invite, removeMember, resendInvitation, revokeInvitation } from './actions';
 
 export const metadata: Metadata = { title: 'Users' };
@@ -23,9 +24,10 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
   const params = await searchParams;
   const cursor = (key: string) => (typeof params[key] === 'string' ? params[key] : undefined);
   const query = (c: string | undefined) => new URLSearchParams({ limit: String(PAGE_SIZE), ...(c && { cursor: c }) });
+  // Clerk mode: members join and leave through Clerk (the API answers 409 to invitations and removals).
   const [members, invitations] = await Promise.all([
     api<CursorPage<User>>(`/users?${query(cursor('members'))}`),
-    api<CursorPage<Invitation>>(`/invitations?${query(cursor('invites'))}`),
+    CLERK ? null : api<CursorPage<Invitation>>(`/invitations?${query(cursor('invites'))}`),
   ]);
   // Moves one list to `value` (null: its first page) and keeps the other where it is.
   const pageLink = (key: 'members' | 'invites', value: string | null) => {
@@ -46,7 +48,11 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
           <CardTitle>
             <h2>Members</h2>
           </CardTitle>
-          <CardDescription>Role changes take effect when the member&apos;s current session expires (at most 15 minutes).</CardDescription>
+          <CardDescription>
+            {CLERK
+              ? 'Members join and leave through your Clerk organization. Roles are managed here and take effect immediately.'
+              : 'Role changes take effect when the member’s current session expires (at most 15 minutes).'}
+          </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
@@ -77,7 +83,7 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
                   </TableCell>
                   {canManage && (
                     <TableCell>
-                      {u.role !== 'SuperAdmin' && u.id !== me.id && (
+                      {!CLERK && u.role !== 'SuperAdmin' && u.id !== me.id && (
                         <ActionForm
                           action={removeMember.bind(null, u.id)}
                           submitLabel="Remove"
@@ -97,6 +103,7 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
         </CardContent>
       </Card>
 
+      {invitations && (
       <Card>
         <CardHeader>
           <CardTitle>
@@ -160,6 +167,7 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
           <Pager next={invitations.nextCursor && pageLink('invites', invitations.nextCursor)} first={cursor('invites') && pageLink('invites', null)} label="invitations" />
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

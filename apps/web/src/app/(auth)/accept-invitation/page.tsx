@@ -1,14 +1,18 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CLERK } from '@/lib/auth-mode';
 import { acceptInvitation } from '../actions';
 
 export const metadata: Metadata = { title: 'Accept invitation' };
 
-// The API emails links to APP_URL/accept-invitation?token=…
+// The API emails links to APP_URL/accept-invitation?token=… (local mode; Clerk sends its own invitations).
 export default async function AcceptInvitationPage({ searchParams }: PageProps<'/accept-invitation'>) {
+  // searchParams first: it makes the page render per request, so a Clerk-mode 404 is never baked in at build.
   const { token } = await searchParams;
+  if (CLERK) notFound();
   return (
     <Card>
       <CardHeader>

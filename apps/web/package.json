@@ -12,6 +12,7 @@
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.9.22",
     "@repo/shared-types": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.0",

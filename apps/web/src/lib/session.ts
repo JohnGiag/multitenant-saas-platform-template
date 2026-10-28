@@ -1,6 +1,8 @@
 import 'server-only';
+import { auth } from '@clerk/nextjs/server';
 import type { AuthToken } from '@repo/shared-types';
 import { cookies } from 'next/headers';
+import { CLERK } from './auth-mode';
 
 // httpOnly: page scripts (and so any XSS) can never read the token. Server actions check Origin (CSRF).
 const TOKEN_COOKIE = 'session';
@@ -9,8 +11,10 @@ const TENANT_COOKIE = 'tenant';
 
 const options = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' } as const;
 
-// The one place that knows where the bearer token comes from: swap this to support another auth provider.
+// The one place that knows where the bearer token comes from. Clerk mode: Clerk's session token, read on this
+// server from Clerk's own cookie (kept fresh by proxy.ts); local mode: ours.
 export async function getToken(): Promise<string | undefined> {
+  if (CLERK) return (await (await auth()).getToken()) ?? undefined;
   return (await cookies()).get(TOKEN_COOKIE)?.value;
 }
 

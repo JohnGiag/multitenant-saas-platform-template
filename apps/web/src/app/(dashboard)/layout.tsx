@@ -1,3 +1,4 @@
+import { OrganizationSwitcher, UserButton } from '@clerk/nextjs';
 import type { CursorPage, Tenant } from '@repo/shared-types';
 import type { ReactNode } from 'react';
 import { SidebarNav } from '@/components/sidebar-nav';
@@ -5,6 +6,7 @@ import { TenantSwitcher } from '@/components/tenant-switcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api, getCapabilities, getCurrentTenant, getPrincipal } from '@/lib/api';
+import { CLERK } from '@/lib/auth-mode';
 import { getTenantOverride } from '@/lib/session';
 import { signOut } from '../(auth)/actions';
 
@@ -27,14 +29,26 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-3">
-          {me.role === 'SuperAdmin' ? <SuperAdminTenants ownTenantId={me.tenantId} /> : <CurrentTenant />}
+          {/* A SuperAdmin picks tenants with X-Tenant-Id; in Clerk mode everyone else switches the active organization. */}
+          {me.role === 'SuperAdmin' ? (
+            <SuperAdminTenants ownTenantId={me.tenantId} />
+          ) : CLERK ? (
+            <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/signed-in" />
+          ) : (
+            <CurrentTenant />
+          )}
           <div className="flex items-center gap-3">
             <Badge variant="secondary">{me.role}</Badge>
-            <form action={signOut}>
-              <Button type="submit" variant="outline" size="sm">
-                Sign out
-              </Button>
-            </form>
+            {/* Clerk's account menu: profile, password, sessions, sign out. */}
+            {CLERK ? (
+              <UserButton />
+            ) : (
+              <form action={signOut}>
+                <Button type="submit" variant="outline" size="sm">
+                  Sign out
+                </Button>
+              </form>
+            )}
           </div>
         </header>
         <main id="main" tabIndex={-1} className="flex-1 p-6 outline-none">

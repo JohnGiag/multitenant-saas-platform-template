@@ -3,6 +3,7 @@ import { ActionForm } from '@/components/action-form';
 import { Field } from '@/components/field';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getPrincipal } from '@/lib/api';
+import { CLERK } from '@/lib/auth-mode';
 import { changePassword } from './actions';
 
 export const metadata: Metadata = { title: 'Account' };
@@ -27,20 +28,24 @@ export default async function AccountPage() {
           </dl>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <h2>Change password</h2>
-          </CardTitle>
-          <CardDescription>Wrong guesses count towards the same limit as sign-in attempts.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ActionForm action={changePassword} submitLabel="Change password">
-            <Field id="current-password" name="currentPassword" label="Current password" type="password" required autoComplete="current-password" />
-            <Field id="new-password" name="newPassword" label="New password" type="password" required minLength={12} autoComplete="new-password" hint="At least 12 characters." />
-          </ActionForm>
-        </CardContent>
-      </Card>
+      {CLERK ? (
+        <p className="text-sm text-muted-foreground">Your email, password and sessions are managed in the account menu (top right).</p>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Change password</h2>
+            </CardTitle>
+            <CardDescription>Wrong guesses count towards the same limit as sign-in attempts.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ActionForm action={changePassword} submitLabel="Change password">
+              <Field id="current-password" name="currentPassword" label="Current password" type="password" required autoComplete="current-password" />
+              <Field id="new-password" name="newPassword" label="New password" type="password" required minLength={12} autoComplete="new-password" hint="At least 12 characters." />
+            </ActionForm>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

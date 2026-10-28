@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, getPrincipal } from '@/lib/api';
+import { CLERK } from '@/lib/auth-mode';
 import { getTenantOverride } from '@/lib/session';
 import { createTenant, deleteTenant, openTenant, updateTenant } from './actions';
 
@@ -33,19 +34,24 @@ export default async function TenantsPage({ searchParams }: PageProps<'/tenants'
     <div className="grid max-w-5xl gap-6">
       <h1 className="text-2xl font-semibold">Tenants</h1>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <h2>Create a tenant</h2>
-          </CardTitle>
-          <CardDescription>New tenants start on the free tier. Open it afterwards and invite its first TenantAdmin from Users.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ActionForm action={createTenant} submitLabel="Create tenant" className="sm:grid-cols-[1fr_auto] sm:items-end">
-            <Field id="new-tenant-name" name="name" label="Name" required maxLength={100} autoComplete="off" />
-          </ActionForm>
-        </CardContent>
-      </Card>
+      {/* Clerk mode: tenants are Clerk organizations, created and deleted there (the API answers 409 here). */}
+      {CLERK ? (
+        <p className="text-sm text-muted-foreground">Tenants are your Clerk organizations: create and delete them in Clerk.</p>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Create a tenant</h2>
+            </CardTitle>
+            <CardDescription>New tenants start on the free tier. Open it afterwards and invite its first TenantAdmin from Users.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ActionForm action={createTenant} submitLabel="Create tenant" className="sm:grid-cols-[1fr_auto] sm:items-end">
+              <Field id="new-tenant-name" name="name" label="Name" required maxLength={100} autoComplete="off" />
+            </ActionForm>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -102,7 +108,7 @@ export default async function TenantsPage({ searchParams }: PageProps<'/tenants'
                                 <TierSelect id={`tier-${t.id}`} defaultValue={t.tier} />
                               </div>
                             </ActionForm>
-                            {!isPlatform && (
+                            {!isPlatform && !CLERK && (
                               <ActionForm action={deleteTenant.bind(null, t.id, t.name)} submitLabel="Delete tenant" variant="destructive" size="sm">
                                 <Field
                                   id={`confirm-${t.id}`}

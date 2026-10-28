@@ -55,6 +55,20 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 }
 
+// Whether the API accepts the current session, without api()'s redirect to /login: the login page uses it, so a
+// Clerk user the API does not know yet (webhooks still on their way) sees why instead of looping.
+export async function apiAcceptsSession(): Promise<boolean> {
+  const token = await getToken();
+  if (!token) return false;
+  try {
+    await request('/auth/me', {}, { authorization: `Bearer ${token}` });
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) return false;
+    throw error;
+  }
+}
+
 // The browser's IP, vouched for by the shared secret: the API believes it only with the secret. Sent on every
 // call, so a caller whose session just expired is limited per browser too, not per dashboard.
 async function forwardedClient(): Promise<Record<string, string>> {

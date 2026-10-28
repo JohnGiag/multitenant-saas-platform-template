@@ -6,6 +6,7 @@ import { IntegrationSettings } from '@/components/integration-settings';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api, getCapabilities, getCurrentTenant, getPrincipal } from '@/lib/api';
+import { CLERK } from '@/lib/auth-mode';
 import { capabilityTitle, configurableCapabilities } from '@/lib/capabilities';
 import { renameTenant } from '../actions';
 
@@ -18,7 +19,8 @@ export default async function SettingsPage() {
   const integrations = configurable.length
     ? (await api<CursorPage<TenantIntegration>>('/integrations?limit=100')).items
     : [];
-  const canRename = me.role === 'TenantAdmin' || me.role === 'SuperAdmin';
+  // Clerk mode: the name is the Clerk organization's, renamed there (the API answers 409 here).
+  const canRename = !CLERK && (me.role === 'TenantAdmin' || me.role === 'SuperAdmin');
 
   return (
     <div className="grid max-w-3xl gap-6">
