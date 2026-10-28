@@ -18,3 +18,12 @@ export const AuditLogEntrySchema = z.object({
   createdAt: TimestampSchema,
 });
 export type AuditLogEntry = z.infer<typeof AuditLogEntrySchema>;
+
+// Optional filters on GET /v1/audit-logs, combined with AND. `from` is inclusive, `to` exclusive.
+export const AuditLogFilterSchema = z.object({
+  actorId: IdSchema.optional(),
+  targetId: z.string().min(1).max(200).optional(),
+  from: TimestampSchema.optional(),
+  to: TimestampSchema.optional(),
+});
+export type AuditLogFilter = z.infer<typeof AuditLogFilterSchema>;

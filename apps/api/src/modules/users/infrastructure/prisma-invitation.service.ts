@@ -100,7 +100,11 @@ export class PrismaInvitationService implements InvitationService {
         const { count } = await tx.invitation.deleteMany({ where: { id: invitation.id, tokenHash } });
         if (count === 0) return 'invalid' as const;
         const { tenantId, email, role } = invitation;
-        await tx.user.create({ data: { tenantId, email, role, passwordHash } });
+        const user = await tx.user.create({ data: { tenantId, email, role, passwordHash }, select: { id: true } });
+        // A public route, so AuditInterceptor does not see it; recorded in the same commit as the account.
+        await tx.auditLog.create({
+          data: { tenantId, actorKind: 'user', actorId: user.id, actorRole: role, method: 'POST', route: '/v1/invitations/accept', status: 201 },
+        });
         return { tenantId, email };
       });
     } catch (error) {

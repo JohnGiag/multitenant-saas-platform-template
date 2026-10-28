@@ -48,7 +48,7 @@ export class PrismaPasswordResetService implements PasswordResetService {
     const tokenHash = hashOneTimeToken(token);
     const reset = await this.prisma.passwordReset.findUnique({
       where: { tokenHash },
-      select: { id: true, userId: true, expiresAt: true, user: { select: { tenantId: true, email: true } } },
+      select: { id: true, userId: true, expiresAt: true, user: { select: { tenantId: true, email: true, role: true } } },
     });
     if (!reset || reset.expiresAt <= new Date()) return 'invalid' as const;
     const passwordHash = await hashPassword(password);
@@ -57,6 +57,18 @@ export class PrismaPasswordResetService implements PasswordResetService {
       const { count } = await tx.passwordReset.deleteMany({ where: { id: reset.id, tokenHash } });
       if (count === 0) return 'invalid' as const;
       await tx.user.update({ where: { id: reset.userId }, data: { passwordHash } });
+      // A public route, so AuditInterceptor does not see it; recorded in the same commit as the change.
+      await tx.auditLog.create({
+        data: {
+          tenantId: reset.user.tenantId,
+          actorKind: 'user',
+          actorId: reset.userId,
+          actorRole: reset.user.role,
+          method: 'POST',
+          route: '/v1/auth/password-reset/confirm',
+          status: 204,
+        },
+      });
       return { tenantId: reset.user.tenantId, email: reset.user.email };
     });
   }

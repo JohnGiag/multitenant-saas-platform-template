@@ -82,6 +82,12 @@ test('a TenantAdmin invites; the platform sends it; the invitee chooses their pa
   assert.equal(typeof (await login(tenants.a, 'new.hire@example.com', NEW_PASSWORD)), 'string');
   const user = await db.user.findFirstOrThrow({ where: { tenantId: tenants.a, email: 'new.hire@example.com' } });
   assert.equal(user.role, 'Auditor');
+  // Public route, still audited: the new member is the actor.
+  const joined = await db.auditLog.findFirstOrThrow({ where: { tenantId: tenants.a, actorId: user.id } });
+  assert.deepEqual(
+    { actorRole: joined.actorRole, method: joined.method, route: joined.route, status: joined.status },
+    { actorRole: 'Auditor', method: 'POST', route: '/v1/invitations/accept', status: 201 },
+  );
 
   // Single use, and the invitation is gone.
   assert.equal((await accept(token)).status, 400);
@@ -179,6 +185,10 @@ test('password reset: the user gets a link and chooses a new password', async ()
   assert.equal(await login(tenants.a, email), 401);
   assert.equal(typeof (await login(tenants.a, email, NEW_PASSWORD)), 'string');
   assert.equal((await confirmReset(tokenIn(sent))).status, 400, 'single use');
+  // Audited once, by the user whose password changed; the refused second use is not.
+  const { id: userId } = await db.user.findFirstOrThrow({ where: { tenantId: tenants.a, email } });
+  const rows = await db.auditLog.findMany({ where: { tenantId: tenants.a, actorId: userId } });
+  assert.deepEqual(rows.map((r) => `${r.method} ${r.route} ${r.status}`), ['POST /v1/auth/password-reset/confirm 204']);
 });
 
 test('password reset reveals nothing about unknown accounts', async () => {

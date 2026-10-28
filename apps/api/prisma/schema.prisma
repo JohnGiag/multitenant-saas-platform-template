@@ -201,6 +201,9 @@ model AuditLog {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, createdAt, id])
+  // For the actorId / targetId filters: without them a rare actor scans the tenant's whole trail.
+  @@index([tenantId, actorId, createdAt, id])
+  @@index([tenantId, targetId, createdAt, id])
   @@map("audit_logs")
 }
 

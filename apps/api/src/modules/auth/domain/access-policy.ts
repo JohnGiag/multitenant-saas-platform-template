@@ -2,7 +2,8 @@ import type { Principal, Role } from '@repo/shared-types';
 
 export type AccessDecision = 'allow' | 'unauthenticated' | 'forbidden';
 
-const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+// Also what AuditInterceptor treats as not-a-write: Auditors may do exactly what is never audited.
+export const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // Deny by default: a route with no roles listed admits nobody, and SuperAdmin is never implied.
 // Auditors are read-only, except on self-service routes about their own account (e.g. their password).

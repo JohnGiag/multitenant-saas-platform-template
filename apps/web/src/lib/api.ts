@@ -52,7 +52,8 @@ async function request<T>(path: string, { method = 'GET', body }: RequestOptions
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const text = await res.text();
-  const data: unknown = text ? JSON.parse(text) : undefined;
+  // Not JSON, e.g. a load balancer's HTML 502 page during a deploy: errorMessage falls back to the status.
+  const data: unknown = text && res.headers.get('content-type')?.includes('json') ? JSON.parse(text) : undefined;
   if (!res.ok) throw new ApiError(res.status, errorMessage(res, data));
   return data as T;
 }

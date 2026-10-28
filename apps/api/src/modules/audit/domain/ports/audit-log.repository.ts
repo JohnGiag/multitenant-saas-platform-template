@@ -1,4 +1,4 @@
-import type { AuditLogEntry, CursorPage } from '@repo/shared-types';
+import type { AuditLogEntry, AuditLogFilter, CursorPage } from '@repo/shared-types';
 
 export const AUDIT_LOG_REPOSITORY = Symbol('AuditLogRepository');
 
@@ -7,6 +7,6 @@ export interface AuditLogRepository {
   // Newest first. `cursor` is the decoded keyset position of the previous page's last entry.
   list(
     tenantId: string,
-    query: { cursor?: { value: string | number; id: string }; limit: number },
+    query: AuditLogFilter & { cursor?: { value: string | number; id: string }; limit: number },
   ): Promise<CursorPage<AuditLogEntry>>;
 }

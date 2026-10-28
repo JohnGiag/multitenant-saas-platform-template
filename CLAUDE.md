@@ -75,7 +75,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 
 ### Compliance targets
 
-- **ISO 27001**: access control, encryption at rest and in transit, audit logs for security-relevant actions. `AuditInterceptor` (`modules/audit`) records every successful write by a signed-in caller in `audit_logs`, in the actor's own tenant. It records only ids and route patterns, never raw URLs, bodies or PII.
+- **ISO 27001**: access control, encryption at rest and in transit, audit logs for security-relevant actions. `AuditInterceptor` (`modules/audit`) records every successful write by a signed-in caller in `audit_logs`, in the actor's own tenant. Public routes that change an account (invitation acceptance, password reset) write their row in the same transaction instead. It records only ids and route patterns, never raw URLs, bodies or PII.
 - **ISO 27701**: minimal PII collection, tenant-scoped PII, support for export and deletion of a data subject's records.
 - **ISO 42001**: any AI feature records model, input metadata, output and actor in an audit trail.
 

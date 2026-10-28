@@ -118,8 +118,9 @@ export class S3StorageProvider implements StorageProvider {
 
   private async reserve(tenantId: string, file: { key: string; size: number; uploaderId: string }): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      // Serializes a tenant's concurrent uploads, so two cannot both take the last free space.
-      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId}::uuid FOR UPDATE`;
+      // Serializes a tenant's concurrent uploads, so two cannot both take the last free space. NO KEY: plain
+      // FOR UPDATE would also block every insert that references the tenant (audit logs, API keys, ...).
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId}::uuid FOR NO KEY UPDATE`;
       const used = await tx.storageObject.aggregate({ where: { tenantId }, _sum: { size: true }, _count: true });
       if (!fitsPlatformQuota({ bytes: used._sum.size ?? 0, objects: used._count }, file.size)) {
         throw new StorageQuotaExceededError('Storage quota reached: delete files or configure your own bucket');

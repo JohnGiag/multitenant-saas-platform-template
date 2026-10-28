@@ -102,3 +102,42 @@ test('the audit log is readable newest first, page by page, by its own tenant on
   assert.equal((await read(tokens.super, '', { tenant: tenants.reader })).status, 403);
   assert.equal((await read(admin, '?cursor=not-a-cursor')).status, 400);
 });
+
+test('the audit log filters by actor, target and time, page by page, within the tenant', async () => {
+  tenants.filtered = await seedTenant('audit-e2e-filtered', { admin: 'TenantAdmin' });
+  tenants.stranger = await seedTenant('audit-e2e-stranger', { admin: 'TenantAdmin' });
+  const [alice, bob, doc, stranger] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  const row = (tenantId, actorId, targetId, day) => ({
+    tenantId, actorKind: 'user', actorId, actorRole: 'User', method: 'PATCH', route: '/v1/users/:id', targetId, status: 200,
+    createdAt: new Date(`2026-10-${day}T12:00:00.000Z`),
+  });
+  await db.auditLog.createMany({
+    data: [
+      row(tenants.filtered, alice, doc, '01'),
+      row(tenants.filtered, alice, null, '02'),
+      row(tenants.filtered, bob, doc, '03'),
+      row(tenants.filtered, alice, doc, '04'),
+      row(tenants.stranger, stranger, doc, '02'),
+    ],
+  });
+  const token = await login(tenants.filtered, 'admin@example.com');
+  const read = async (query) => {
+    const res = await call('GET', `/audit-logs?${new URLSearchParams(query)}`, { token });
+    return { status: res.status, body: res.ok ? await res.json() : null };
+  };
+  const days = async (query) => (await read(query)).body.items.map((e) => e.createdAt.slice(8, 10));
+
+  assert.deepEqual(await days({ actorId: alice }), ['04', '02', '01']);
+  assert.deepEqual(await days({ targetId: doc }), ['04', '03', '01']);
+  assert.deepEqual(await days({ actorId: alice, targetId: doc }), ['04', '01']);
+  // `from` inclusive, `to` exclusive.
+  assert.deepEqual(await days({ from: '2026-10-02T12:00:00.000Z', to: '2026-10-04T12:00:00.000Z' }), ['03', '02']);
+  // Filters hold across pages.
+  const page1 = await read({ actorId: alice, limit: '2' });
+  assert.deepEqual(page1.body.items.map((e) => e.createdAt.slice(8, 10)), ['04', '02']);
+  assert.deepEqual(await days({ actorId: alice, limit: '2', cursor: page1.body.nextCursor }), ['01']);
+  // Another tenant's actor is never found.
+  assert.deepEqual(await days({ actorId: stranger }), []);
+  assert.equal((await read({ actorId: 'not-a-uuid' })).status, 400);
+  assert.equal((await read({ from: '2026-10-01' })).status, 400);
+});

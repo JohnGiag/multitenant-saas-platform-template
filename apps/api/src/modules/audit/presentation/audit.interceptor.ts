@@ -4,8 +4,7 @@ import { Reflector } from '@nestjs/core';
 import type { Principal } from '@repo/shared-types';
 import { mergeMap, type Observable } from 'rxjs';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
-
-const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+import { READ_METHODS } from '../../auth/domain/access-policy.js';
 
 interface AuditedRequest {
   method: string;

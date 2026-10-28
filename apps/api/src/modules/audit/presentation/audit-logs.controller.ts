@@ -1,5 +1,5 @@
 import { Controller, ForbiddenException, Get, Inject, Query } from '@nestjs/common';
-import { pageQuery, type AuditLogEntry, type CursorPage, type Principal } from '@repo/shared-types';
+import { AuditLogFilterSchema, pageQuery, type AuditLogEntry, type CursorPage, type Principal } from '@repo/shared-types';
 import { z } from 'zod';
 import { keysetCursorSchema } from '../../../common/keyset.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
@@ -8,7 +8,7 @@ import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { AUDIT_LOG_REPOSITORY, type AuditLogRepository } from '../domain/ports/audit-log.repository.js';
 
 // Entries are listed by created_at, so the cursor value must be a timestamp.
-const AuditLogPageQuerySchema = pageQuery(keysetCursorSchema(z.iso.datetime()));
+const AuditLogPageQuerySchema = pageQuery(keysetCursorSchema(z.iso.datetime())).extend(AuditLogFilterSchema.shape);
 
 @Controller('audit-logs')
 export class AuditLogsController {
