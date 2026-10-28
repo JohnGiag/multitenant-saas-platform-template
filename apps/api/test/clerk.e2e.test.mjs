@@ -263,4 +263,11 @@ test('Clerk owns sign-in, passwords, invitations and membership lifecycle (409);
   const superToken = await token(root, org('platform'));
   assert.equal((await call('POST', '/tenants', { token: superToken, body: { name: 'x' } })).status, 409);
   assert.equal((await call('DELETE', `/tenants/${member.tenantId}`, { token: superToken })).status, 409);
+  // Nor rename one (the next organization.updated would undo it), but the tier is ours to set.
+  const patchTenant = (body) => call('PATCH', `/tenants/${member.tenantId}`, { token: superToken, body });
+  assert.equal((await patchTenant({ name: 'Renamed here' })).status, 409);
+  assert.equal((await patchTenant({ name: 'Renamed here', tier: 'pro' })).status, 409);
+  const retiered = await patchTenant({ tier: 'pro' });
+  assert.equal(retiered.status, 200);
+  assert.equal((await retiered.json()).tier, 'pro');
 });

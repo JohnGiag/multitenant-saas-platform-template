@@ -102,7 +102,8 @@ export default async function TenantsPage({ searchParams }: PageProps<'/tenants'
                           </summary>
                           <div className="mt-3 grid w-72 gap-4 rounded-md border p-4">
                             <ActionForm action={updateTenant.bind(null, t.id)} submitLabel="Save" size="sm">
-                              <Field id={`name-${t.id}`} name="name" label="Name" required maxLength={100} defaultValue={t.name} />
+                              {/* Clerk mode: the organization's name, renamed in Clerk (the API answers 409). */}
+                              {!CLERK && <Field id={`name-${t.id}`} name="name" label="Name" required maxLength={100} defaultValue={t.name} />}
                               <div className="grid gap-2">
                                 <Label htmlFor={`tier-${t.id}`}>Tier</Label>
                                 <TierSelect id={`tier-${t.id}`} defaultValue={t.tier} />

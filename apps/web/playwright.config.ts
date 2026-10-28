@@ -30,10 +30,12 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      // Built here, in local mode: AUTH_PROVIDER and NEXT_PUBLIC_* are baked in at build time.
+      // Built here, in local mode: AUTH_PROVIDER and NEXT_PUBLIC_* are baked in at build time. Into .next-e2e, so this
+      // keyless build never replaces the one `next start` serves.
       command: `pnpm exec next build && pnpm exec next start -p ${WEB_PORT}`,
       url: `http://localhost:${WEB_PORT}/login`,
       env: {
+        NEXT_DIST_DIR: '.next-e2e',
         AUTH_PROVIDER: 'local',
         API_URL: `http://localhost:${API_PORT}`,
         TRUST_PROXY_HOPS: '0',

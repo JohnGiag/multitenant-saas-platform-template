@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   ForbiddenException,
@@ -13,6 +14,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   AdminUpdateTenantSchema,
   CreateTenantSchema,
@@ -33,7 +35,10 @@ import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 
 @Controller('tenants')
 export class TenantsController {
-  constructor(@Inject(TENANT_REPOSITORY) private readonly tenants: TenantRepository) {}
+  constructor(
+    @Inject(TENANT_REPOSITORY) private readonly tenants: TenantRepository,
+    private readonly config: ConfigService,
+  ) {}
 
   // Own tenant (or the X-Tenant-Id target for a SuperAdmin).
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
@@ -72,6 +77,11 @@ export class TenantsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(AdminUpdateTenantSchema)) body: AdminUpdateTenantDto,
   ): Promise<Tenant> {
+    // Clerk mode: the name is the Clerk organization's, and its next organization.updated webhook would undo a
+    // rename made here. The tier stays ours.
+    if (body.name !== undefined && this.config.get<string>('AUTH_PROVIDER') === 'clerk') {
+      throw new ConflictException('Managed in Clerk for this deployment');
+    }
     return this.found(await this.tenants.update(id, body));
   }
 
