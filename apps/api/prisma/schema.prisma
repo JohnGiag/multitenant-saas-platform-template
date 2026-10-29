@@ -42,6 +42,7 @@ model Tenant {
   passwordResets PasswordReset[]
   auditLogs      AuditLog[]
   storageObjects StorageObject[]
+  billingAccount BillingAccount?
 
   @@map("tenants")
 }
@@ -228,6 +229,33 @@ model StorageObject {
 
   @@index([tenantId, id])
   @@map("storage_objects")
+}
+
+// A tenant's Stripe customer and subscription, used by the optional billing module (src/optional/billing). Mirrors
+// what Stripe last reported; the tenant's tier follows it.
+model BillingAccount {
+  id                   String    @id @default(uuid(7)) @db.Uuid
+  // One per tenant (also the index for every lookup: webhooks find the row by tenant and customer together).
+  tenantId             String    @unique @map("tenant_id") @db.Uuid
+  stripeCustomerId     String    @unique @map("stripe_customer_id")
+  // The subscription the tier follows; null until the first checkout completes.
+  stripeSubscriptionId String?   @map("stripe_subscription_id")
+  // Stripe's status (active, trialing, past_due, canceled, ...); null before the first subscription.
+  status               String?
+  priceId              String?   @map("price_id")
+  currentPeriodEnd     DateTime? @map("current_period_end") @db.Timestamptz(3)
+  // A scheduled cancellation: the tier stays until then (a job drops it to free at that time).
+  cancelAt             DateTime? @map("cancel_at") @db.Timestamptz(3)
+  // When Stripe created the last event applied here: an older one (a late retry) changes nothing.
+  lastEventAt          DateTime? @map("last_event_at") @db.Timestamptz(3)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // Cascade: core tenant deletion must not need to know this optional table. The billing module's deletion hook
+  // cancels the subscription in Stripe first.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("billing_accounts")
 }
 
 // The dashboard's text, one row per language and key (GET /v1/translations/:locale). Platform-wide, not

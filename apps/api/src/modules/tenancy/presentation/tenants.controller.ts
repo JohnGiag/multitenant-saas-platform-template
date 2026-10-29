@@ -32,6 +32,7 @@ import {
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Roles } from '../../auth/presentation/decorators.js';
+import { OPTIONAL_MODULES, tierIsManaged, type OptionalModule } from '../../system/domain/optional-module.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../domain/ports/tenant.repository.js';
 import { TenantId } from './tenant-context.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
@@ -41,6 +42,7 @@ export class TenantsController {
   constructor(
     @Inject(TENANT_REPOSITORY) private readonly tenants: TenantRepository,
     private readonly config: ConfigService,
+    @Inject(OPTIONAL_MODULES) private readonly modules: OptionalModule[],
   ) {}
 
   // Own tenant (or the X-Tenant-Id target for a SuperAdmin).
@@ -79,7 +81,7 @@ export class TenantsController {
   }
 
   @Roles('SuperAdmin')
-  @ApiDoc("Rename a tenant or change its tier (in Clerk mode, the tier only: the name is the organization's)", TenantSchema)
+  @ApiDoc("Rename a tenant or change its tier (in Clerk mode, the tier only: the name is the organization's; with billing on, the name only: 409)", TenantSchema)
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -89,6 +91,12 @@ export class TenantsController {
     // rename made here. The tier stays ours.
     if (body.name !== undefined && this.config.get<string>('AUTH_PROVIDER') === 'clerk') {
       throw new ConflictException('Managed in Clerk for this deployment');
+    }
+    // Billing installed and configured: tiers follow subscriptions, and its next update would undo this one. The
+    // current tier sent back unchanged (a form that always sends both fields) is fine.
+    if (body.tier !== undefined && tierIsManaged(this.modules, (name) => this.config.get<string>(name) || undefined)) {
+      const current = this.found(await this.tenants.findById(id));
+      if (current.tier !== body.tier) throw new ConflictException('Tiers follow subscriptions in this deployment (billing)');
     }
     return this.found(await this.tenants.update(id, body));
   }

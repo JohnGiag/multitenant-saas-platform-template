@@ -29,8 +29,8 @@ export async function createTenant(_: FormState, form: FormData): Promise<FormSt
 }
 
 export async function updateTenant(id: string, _: FormState, form: FormData): Promise<FormState> {
-  // No name field in Clerk mode: the tier alone is sent.
-  const parsed = AdminUpdateTenantSchema.safeParse({ name: form.get('name') ?? undefined, tier: form.get('tier') });
+  // No name field in Clerk mode, and no tier field while billing sets tiers: only what the form has is sent.
+  const parsed = AdminUpdateTenantSchema.safeParse({ name: form.get('name') ?? undefined, tier: form.get('tier') ?? undefined });
   if (!parsed.success) return invalid(parsed.error);
   return run(() => api(`/tenants/${IdSchema.parse(id)}`, { method: 'PATCH', body: parsed.data, ownTenant: true }), (await getT())('common.saved'));
 }

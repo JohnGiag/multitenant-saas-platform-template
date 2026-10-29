@@ -36,6 +36,7 @@ Tenants, sign-in, roles, API keys, encrypted per-tenant secrets, rate limits, ba
 | **Rate limiting** | Redis sliding window per tenant, caller and tier, plus per-account login limits. Answers `429` with `Retry-After`. |
 | **Background jobs** | BullMQ with retries, exponential backoff and a dead-letter queue. Workers load secrets only when a job runs. |
 | **Notifications** | Server-Sent Events across all API instances (Redis Pub/Sub), plus email and push as pluggable channels. |
+| **Billing** | Stripe subscriptions set each tenant's tier. Stripe hosts checkout and the customer portal; a cancelled plan stays paid until its period ends. |
 | **File storage** | R2 or any S3-compatible store through presigned URLs, with a per-tenant quota. File bytes never touch the API. |
 | **Audit log** | Every successful write is recorded with its actor and target, and can be filtered by actor, target and time. |
 | **Plug-and-play modules** | Optional modules (email, push, storage) are folders: delete one and everything still compiles. |
@@ -155,6 +156,7 @@ Each app reads its own env file: `apps/api/.env` and `apps/web/.env.local`. Both
 | `DASHBOARD_PROXY_SECRET` | | Shared with the dashboard, at least 32 characters (see [Rate limiting](#rate-limiting)) |
 | `CLERK_ISSUER`, `CLERK_WEBHOOK_SECRET`, `CLERK_AUTHORIZED_PARTIES` | Clerk mode | See [Clerk mode](#clerk-mode) |
 | `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_REGION` | | The platform bucket. Set all of them or none; `STORAGE_REGION` is optional |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ENTERPRISE` | | Billing (see [Billing](#billing)). Set all of them or none; with none, billing is installed but off |
 | `JOB_ATTEMPTS`, `JOB_BACKOFF_MS`, `WORKER_CONCURRENCY`, `DLQ_MAX_ENTRIES`, `QUEUE_PREFIX` | | Job tuning. Defaults: 3, 1000 ms, 5, 10 000 and `bull` |
 
 ¹ For Redis high availability, set `REDIS_SENTINELS` and `REDIS_SENTINEL_NAME` (plus `REDIS_PASSWORD` if needed) instead.
@@ -255,6 +257,7 @@ Every route is limited with a Redis sliding window over the last 60 seconds, wit
 | Signed-in user or API key | per tenant and caller | per minute: `free` 120, `pro` 600, `enterprise` 3000 | served, unmetered |
 | Unauthenticated (e.g. sign-in) | per client IP and route | 100 per minute | `503` |
 | Health probes (`/v1/health`, `/v1/health/ready`) | per client IP and route | 100 per minute | served, unmetered |
+| Webhooks with a valid provider signature (Stripe) | not limited | none | served |
 | Sign-in attempts | per email (any tenant), or per account when a `tenantId` is sent: per client IP, and for all IPs together | 10 per 15 minutes per IP (a success resets it); 100 per 15 minutes from all IPs | `503` |
 | Password reset requests | per email: per client IP, and for all IPs together | 10 per 15 minutes per IP; 30 from all IPs | `503` |
 
@@ -291,6 +294,25 @@ Optional module `storage`, for Cloudflare R2 or any S3-compatible store.
 > [{ "AllowedOrigins": ["https://your-dashboard.example"], "AllowedMethods": ["PUT", "GET"], "AllowedHeaders": ["content-type"], "MaxAgeSeconds": 3600 }]
 > ```
 
+## Billing
+
+Optional module `billing`, with Stripe. The platform charges its tenants from its own Stripe account (`STRIPE_*`); tenants never bring Stripe keys.
+
+- **Stripe hosts every payment screen.** A `TenantAdmin` starts a subscription on Stripe Checkout (`POST /v1/billing/checkout` with `pro` or `enterprise`) and later changes plan, payment method, invoices or cancels in the Customer Portal (`POST /v1/billing/portal`). Card details never reach the API or the dashboard. `Auditor`s read the plan; `SuperAdmin` stays out.
+- **The new plan shows at once.** Stripe sends the browser back to `/billing` with the checkout session's id, and the page confirms it (`POST /v1/billing/checkout/confirm`): the API reads the session from Stripe and applies the subscription right away, without waiting for the webhook. If that fails, the webhook applies it moments later.
+- **Webhooks set the tier.** `POST /v1/billing/webhook` receives Stripe's signed subscription events and sets the tenant's tier from the price (`STRIPE_PRICE_PRO`, `STRIPE_PRICE_ENTERPRISE`). Events may arrive late, twice or out of order: older ones change nothing, and an ended subscription is never revived. A subscription counts only when both its `tenantId` metadata (set by our checkout) and its customer match the tenant.
+- **A cancelled plan stays paid until its period ends.** Cancelling schedules a job for that time; it drops the tenant to `free` unless the cancellation was undone. Stripe's own "deleted" event at the end does the same, and whichever comes first wins, so a lost webhook cannot leave a tenant on a paid tier.
+- **Failed payments:** the tier holds while Stripe retries the card (`past_due`), and drops when Stripe gives up (`canceled` or `unpaid`). Set the retries in Stripe (Billing → Revenue recovery).
+- **Tiers follow subscriptions.** While billing is on, a `SuperAdmin` cannot set tiers by hand (`409`); renaming tenants still works.
+- **Signed webhooks are not rate limited,** so Stripe's retries after an outage, which arrive in bursts, are never refused. Requests without a valid signature are limited per IP like any public route.
+- **Deleting a tenant cancels its subscription in Stripe first.** If Stripe cannot be reached, the deletion fails and can be retried, rather than leaving the tenant charged.
+
+**Setting it up** (test mode first, no business verification needed):
+1. In the Stripe Dashboard, create a product with a monthly price for Pro and one for Enterprise. Their `price_…` ids go in `STRIPE_PRICE_PRO` and `STRIPE_PRICE_ENTERPRISE`, and the secret key in `STRIPE_SECRET_KEY`.
+2. **Customer portal** (Settings → Billing → Customer portal): allow cancellations **at the end of the billing period**, and plan switching between your two prices. Save it once, even with the defaults: the portal does not open before that.
+3. **Webhook:** add an endpoint for `https://<your-api>/v1/billing/webhook` with the `customer.subscription.*` events, and put its signing secret in `STRIPE_WEBHOOK_SECRET`. Locally, `stripe listen --forward-to localhost:3000/v1/billing/webhook` prints a secret to use instead.
+4. Check your account with `pnpm --filter @repo/api test:live`: the Stripe live test runs only with an `sk_test_` key.
+
 ## Audit log
 
 - **Every successful write** (`POST`, `PUT`, `PATCH`, `DELETE`) by a signed-in user or API key is recorded: the actor (kind, id, role), the route pattern, the `:id` target, the status and, when a `SuperAdmin` acted on another tenant, which one. Ids only: no request bodies, raw URLs or personal data.
@@ -300,7 +322,7 @@ Optional module `storage`, for Cloudflare R2 or any S3-compatible store.
 
 ## Modules and integrations
 
-- **Optional modules** live in `apps/api/src/optional/<key>/` (email, push and storage today). Delete a module's folder to uninstall it: nothing else imports it, and an architecture test enforces that.
+- **Optional modules** live in `apps/api/src/optional/<key>/` (billing, email, push and storage today). Delete a module's folder to uninstall it: nothing else imports it, and an architecture test enforces that.
 - **`GET /v1/system/capabilities`** reports which modules are installed and enabled for the tenant. The dashboard's Settings page shows one tab per module that takes tenant configuration. Known providers (`resend`, `fcm`, `r2`) get a form, and a module added later gets a JSON editor, with no dashboard change.
 - **BYOK secrets** are stored encrypted with AES-256-GCM, with a random IV each time and bound to their tenant and provider. Only masked values ever leave the API. Only providers used by an installed module are accepted.
 
@@ -410,6 +432,7 @@ Liveness checks no dependency on purpose: a Postgres or Redis outage should take
 - [ ] Create the first `SuperAdmin`, and keep at least two.
 - [ ] Clerk mode: sign-up Restricted, and no organization creation or deletion by users.
 - [ ] Point your orchestrator's liveness probes at `/v1/health` (API) and `/health` (dashboard), and readiness at `/v1/health/ready`.
+- [ ] Billing: live Stripe keys and prices, the webhook endpoint registered for the production API, and the Customer Portal set to cancel at the end of the period.
 - [ ] Make the `ci` check required for `main` (GitHub → Settings → Branches).
 
 ## Project structure

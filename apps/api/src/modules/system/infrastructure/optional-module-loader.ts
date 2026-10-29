@@ -14,6 +14,10 @@ const DescriptorSchema = z.object({
   worksWithoutIntegration: z
     .custom<NonNullable<OptionalModule['worksWithoutIntegration']>>((value) => typeof value === 'function')
     .optional(),
+  platformReady: z
+    .custom<NonNullable<OptionalModule['platformReady']>>((value) => typeof value === 'function')
+    .optional(),
+  ownsTenantTier: z.boolean().optional(),
   module: z.custom<OptionalModule['module']>((value) => typeof value === 'function'),
 });
 

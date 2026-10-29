@@ -6,6 +6,13 @@ const API_PORT = 3100;
 const WEB_PORT = 3101;
 // Shared by both servers: `next start` refuses to run in production without it.
 const PROXY_SECRET = 'e2e-dashboard-proxy-secret-0123456789abcdef';
+// Turns the billing module on, so its page is tested. Fake values: the tests never reach Stripe (no checkout is started).
+const STRIPE = {
+  STRIPE_SECRET_KEY: 'sk_test_e2e_not_a_real_key',
+  STRIPE_WEBHOOK_SECRET: 'whsec_e2e_not_a_real_secret',
+  STRIPE_PRICE_PRO: 'price_e2e_pro',
+  STRIPE_PRICE_ENTERPRISE: 'price_e2e_enterprise',
+};
 
 export default defineConfig({
   testDir: './e2e',
@@ -27,7 +34,7 @@ export default defineConfig({
       command: 'node dist/main.js',
       cwd: '../api',
       url: `http://localhost:${API_PORT}/v1/auth/me`,
-      env: { PORT: String(API_PORT), AUTH_PROVIDER: 'local', DASHBOARD_PROXY_SECRET: PROXY_SECRET },
+      env: { PORT: String(API_PORT), AUTH_PROVIDER: 'local', DASHBOARD_PROXY_SECRET: PROXY_SECRET, ...STRIPE },
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },

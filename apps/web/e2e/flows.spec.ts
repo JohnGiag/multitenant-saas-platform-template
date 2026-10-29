@@ -79,6 +79,50 @@ test.describe('TenantAdmin', () => {
   });
 });
 
+test.describe('Billing', () => {
+  test.describe('TenantAdmin', () => {
+    test.use({ storageState: sessionFile('admin') });
+
+    test('sees the free plan and the plans to choose from, reached from the sidebar', async ({ page }) => {
+      await page.goto('/');
+      await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Billing' }).click();
+      await expect(page.getByRole('heading', { level: 1, name: 'Billing' })).toBeVisible();
+      await expect(page.getByText('No subscription yet')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Upgrade to Pro' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Upgrade to Enterprise' })).toBeVisible();
+    });
+
+    // This tenant never started a checkout, so the API cannot confirm the session: the page falls back to waiting.
+    test('back from a checkout it cannot confirm, says the plan follows once Stripe confirms', async ({ page }) => {
+      await page.goto('/billing?checkout_session=cs_test_e2e');
+      await expect(page.getByRole('status').filter({ hasText: 'Payment received' })).toBeVisible();
+    });
+  });
+
+  test.describe('Auditor', () => {
+    test.use({ storageState: sessionFile('auditor') });
+
+    test('reads the plan but cannot change it', async ({ page }) => {
+      await page.goto('/billing');
+      await expect(page.getByRole('heading', { level: 2, name: 'Current plan' })).toBeVisible();
+      await expect(page.getByText('Only TenantAdmins can change the subscription.')).toBeVisible();
+      await expect(page.getByRole('button', { name: /Upgrade|portal/ })).toHaveCount(0);
+    });
+  });
+
+  test.describe('SuperAdmin', () => {
+    test.use({ storageState: sessionFile('super') });
+
+    test('has no billing page, and cannot set tiers while billing is on', async ({ page }) => {
+      expect((await page.goto('/billing'))?.status()).toBe(404);
+      await page.goto('/tenants');
+      await page.locator('summary').first().click();
+      await expect(page.getByText('follows its subscription (billing)').first()).toBeVisible();
+      await expect(page.getByRole('combobox', { name: 'Tier' })).toHaveCount(0);
+    });
+  });
+});
+
 test.describe('Auditor', () => {
   test.use({ storageState: sessionFile('auditor') });
 

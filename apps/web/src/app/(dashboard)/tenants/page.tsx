@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { api, getPrincipal } from '@/lib/api';
+import { api, getCapabilities, getPrincipal } from '@/lib/api';
 import { CLERK } from '@/lib/auth-mode';
 import { getT, pageTitle } from '@/lib/i18n';
 import { getTenantOverride } from '@/lib/session';
@@ -24,10 +24,14 @@ export default async function TenantsPage({ searchParams }: PageProps<'/tenants'
   if (me.role !== 'SuperAdmin') notFound();
   const { cursor } = await searchParams;
   const current = typeof cursor === 'string' ? cursor : undefined;
-  const [tenants, selected] = await Promise.all([
+  const [tenants, selected, capabilities] = await Promise.all([
     api<CursorPage<Tenant>>(`/tenants?${new URLSearchParams({ limit: String(PAGE_SIZE), ...(current && { cursor: current }) })}`, { ownTenant: true }),
     getTenantOverride(),
+    getCapabilities(),
   ]);
+  // Billing on: tiers follow subscriptions (the API refuses a change). With Clerk too, nothing is left to edit here.
+  const billing = capabilities.some((c) => c.key === 'billing' && c.enabled);
+  const editable = !(CLERK && billing);
   const activeId = selected ?? me.tenantId;
 
   return (
@@ -101,14 +105,19 @@ export default async function TenantsPage({ searchParams }: PageProps<'/tenants'
                             {t('tenants.manage')}<span className="sr-only"> {tenant.name}</span>
                           </summary>
                           <div className="mt-3 grid w-72 gap-4 rounded-md border p-4">
-                            <ActionForm action={updateTenant.bind(null, tenant.id)} submitLabel={t('common.save')} size="sm">
-                              {/* Clerk mode: the organization's name, renamed in Clerk (the API answers 409). */}
-                              {!CLERK && <Field id={`name-${tenant.id}`} name="name" label={t('common.name')} required maxLength={100} defaultValue={tenant.name} />}
-                              <div className="grid gap-2">
-                                <Label htmlFor={`tier-${tenant.id}`}>{t('common.tier')}</Label>
-                                <TierSelect id={`tier-${tenant.id}`} defaultValue={tenant.tier} />
-                              </div>
-                            </ActionForm>
+                            {editable && (
+                              <ActionForm action={updateTenant.bind(null, tenant.id)} submitLabel={t('common.save')} size="sm">
+                                {/* Clerk mode: the organization's name, renamed in Clerk (the API answers 409). */}
+                                {!CLERK && <Field id={`name-${tenant.id}`} name="name" label={t('common.name')} required maxLength={100} defaultValue={tenant.name} />}
+                                {!billing && (
+                                  <div className="grid gap-2">
+                                    <Label htmlFor={`tier-${tenant.id}`}>{t('common.tier')}</Label>
+                                    <TierSelect id={`tier-${tenant.id}`} defaultValue={tenant.tier} />
+                                  </div>
+                                )}
+                              </ActionForm>
+                            )}
+                            {billing && <p className="text-sm text-muted-foreground">{t('tenants.tierByBilling')}</p>}
                             {!isPlatform && !CLERK && (
                               <ActionForm action={deleteTenant.bind(null, tenant.id, tenant.name)} submitLabel={t('tenants.deleteButton')} variant="destructive" size="sm">
                                 <Field

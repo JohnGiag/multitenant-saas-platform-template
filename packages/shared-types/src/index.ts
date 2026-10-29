@@ -11,3 +11,4 @@ export * from './storage.js';
 export * from './audit.js';
 export * from './i18n.js';
 export * from './health.js';
+export * from './billing.js';

@@ -7,17 +7,20 @@ import {
   ServiceUnavailableException,
   type CanActivate,
   type ExecutionContext,
+  type Type,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Reflector } from '@nestjs/core';
+import { ModuleRef, Reflector } from '@nestjs/core';
 import type { AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { forwardedClientIp } from '../domain/forwarded-client.js';
 import { RATE_LIMITER, type RateLimiter, type RateLimitResult } from '../domain/ports/rate-limiter.port.js';
 import { planRateLimit } from '../domain/rate-limit-policy.js';
 import { FAIL_OPEN_KEY } from './fail-open.js';
+import { TRUSTED_CALLER_KEY, type TrustedCallerCheck } from './trusted-caller.js';
 
 interface RateLimitedRequest extends AuthenticatedRequest {
   ip?: string;
+  rawBody?: Buffer;
   path: string;
   route?: { path?: string };
 }
@@ -34,6 +37,7 @@ export class RateLimitGuard implements CanActivate {
   constructor(
     @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
     private readonly reflector: Reflector,
+    private readonly moduleRef: ModuleRef,
     config: ConfigService,
   ) {
     this.forwardedIp = forwardedClientIp(config.get<string>('DASHBOARD_PROXY_SECRET') || undefined);
@@ -44,8 +48,11 @@ export class RateLimitGuard implements CanActivate {
     const req = http.getRequest<RateLimitedRequest>();
     const res = http.getResponse<{ setHeader(name: string, value: number): void }>();
     // The browser's IP when the dashboard vouches for it; otherwise req.ip, which honours TRUST_PROXY_HOPS.
-    // Route pattern (/api-keys/:id), so every id shares one bucket.
     req.clientIp = this.forwardedIp(req.headers) ?? req.ip ?? 'unknown';
+    // A provider proven by its signature (a webhook) is not limited: its own retries would otherwise be refused.
+    const trusted = this.reflector.getAllAndOverride<Type<TrustedCallerCheck> | undefined>(TRUSTED_CALLER_KEY, [ctx.getHandler(), ctx.getClass()]);
+    if (trusted && this.moduleRef.get(trusted, { strict: false }).isTrusted(req)) return true;
+    // Route pattern (/api-keys/:id), so every id shares one bucket.
     const plan = planRateLimit(req.principal ?? null, {
       ip: req.clientIp,
       method: req.method,

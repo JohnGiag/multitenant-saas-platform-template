@@ -14,9 +14,28 @@ export interface OptionalModule {
   // True when the platform's own settings make it usable for tenants without the integration
   // (e.g. a shared platform bucket). Omit if the integration is required.
   worksWithoutIntegration?: (setting: PlatformSetting) => boolean;
+  // False while platform settings the module cannot work without are missing (e.g. billing without its Stripe
+  // keys): it then stays installed but disabled for every tenant. Omit if it needs none.
+  platformReady?: (setting: PlatformSetting) => boolean;
+  // True if, while enabled, the module sets tenants' tiers itself (billing): core then refuses manual tier changes,
+  // which the module's next update would silently undo.
+  ownsTenantTier?: boolean;
   // The module's root NestJS module class.
   module: new (...args: any[]) => unknown;
 }
+
+export function isEnabled(
+  { integration, worksWithoutIntegration, platformReady }: OptionalModule,
+  enabledIntegrations: ReadonlySet<string>,
+  setting: PlatformSetting,
+): boolean {
+  if (platformReady && !platformReady(setting)) return false;
+  return integration === undefined || enabledIntegrations.has(integration) || (worksWithoutIntegration?.(setting) ?? false);
+}
+
+// Whether an enabled module sets tenant tiers (see ownsTenantTier). Platform-wide: such modules need no integration.
+export const tierIsManaged = (modules: readonly OptionalModule[], setting: PlatformSetting) =>
+  modules.some((m) => m.ownsTenantTier && isEnabled(m, new Set(), setting));
 
 export function toCapabilities(
   modules: readonly OptionalModule[],
@@ -24,13 +43,6 @@ export function toCapabilities(
   setting: PlatformSetting,
 ): Capability[] {
   return modules
-    .map(({ key, integration, worksWithoutIntegration }) => ({
-      key,
-      integration: integration ?? null,
-      enabled:
-        integration === undefined ||
-        enabledIntegrations.has(integration) ||
-        (worksWithoutIntegration?.(setting) ?? false),
-    }))
+    .map((module) => ({ key: module.key, integration: module.integration ?? null, enabled: isEnabled(module, enabledIntegrations, setting) }))
     .sort((a, b) => a.key.localeCompare(b.key));
 }
