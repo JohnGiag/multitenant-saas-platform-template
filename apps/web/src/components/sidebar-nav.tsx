@@ -1,7 +1,7 @@
 'use client';
 
 import type { Role } from '@repo/shared-types';
-import { Bell, Building2, CreditCard, FileText, KeyRound, LayoutDashboard, ScrollText, Settings, UserRound, Users } from 'lucide-react';
+import { Bell, Building2, CreditCard, FileText, KeyRound, LayoutDashboard, ScrollText, Settings, UserRound, Users, Webhook } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from 'cn';
@@ -16,6 +16,7 @@ const LINKS: { href: string; label: string; icon: typeof Settings; roles?: Role[
   { href: '/api-keys', label: 'nav.apiKeys', icon: KeyRound, roles: ['TenantAdmin', 'Auditor'] },
   { href: '/files', label: 'nav.files', icon: FileText, roles: ['TenantAdmin', 'User', 'Auditor'], capability: 'storage' },
   { href: '/billing', label: 'nav.billing', icon: CreditCard, roles: ['TenantAdmin', 'Auditor'], capability: 'billing' },
+  { href: '/webhooks', label: 'nav.webhooks', icon: Webhook, roles: ['TenantAdmin', 'Auditor'], capability: 'webhooks' },
   { href: '/notifications', label: 'nav.notifications', icon: Bell },
   { href: '/audit', label: 'nav.audit', icon: ScrollText, roles: ['SuperAdmin', 'TenantAdmin', 'Auditor'] },
   { href: '/settings', label: 'nav.settings', icon: Settings },

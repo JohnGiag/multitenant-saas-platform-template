@@ -16,6 +16,7 @@ import { SYSTEM_MAILER, type SystemMailer } from '../../mail/domain/ports/system
 import { invitationEmail } from '../domain/emails.js';
 import { hashOneTimeToken, INVITATION_TTL_MS, newOneTimeToken } from '../domain/one-time-token.js';
 import type { InvitationService } from '../domain/ports/invitation.service.js';
+import { TenantEvents } from '../../events/domain/tenant-events.js';
 import { appLink } from './app-links.js';
 
 // Never selects tokenHash.
@@ -36,6 +37,7 @@ export class PrismaInvitationService implements InvitationService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Inject(SYSTEM_MAILER) private readonly mailer: SystemMailer,
+    private readonly events: TenantEvents,
   ) {}
 
   async invite(tenantId: string, { email, role }: CreateInvitationDto) {
@@ -94,8 +96,9 @@ export class PrismaInvitationService implements InvitationService {
     const invitation = await this.prisma.invitation.findUnique({ where: { tokenHash } });
     if (!invitation || invitation.expiresAt <= new Date()) return 'invalid';
     const passwordHash = await hashPassword(password);
+    let joined;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      joined = await this.prisma.$transaction(async (tx) => {
         // Consuming the token is the guard: a second accept of the same link finds nothing to delete.
         const { count } = await tx.invitation.deleteMany({ where: { id: invitation.id, tokenHash } });
         if (count === 0) return 'invalid' as const;
@@ -105,13 +108,16 @@ export class PrismaInvitationService implements InvitationService {
         await tx.auditLog.create({
           data: { tenantId, actorKind: 'user', actorId: user.id, actorRole: role, method: 'POST', route: '/v1/invitations/accept', status: 201 },
         });
-        return { tenantId, email };
+        return { tenantId, email, userId: user.id, role };
       });
     } catch (error) {
       // Became a member another way in the meantime.
       if (hasCode(error, 'P2002')) return 'already_member';
       throw error;
     }
+    if (joined === 'invalid') return joined;
+    await this.events.publish(joined.tenantId, 'member.joined', { userId: joined.userId, role: joined.role });
+    return { tenantId: joined.tenantId, email: joined.email };
   }
 
   private async email(row: PublicRow, token: string): Promise<void> {

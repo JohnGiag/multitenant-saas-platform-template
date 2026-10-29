@@ -33,6 +33,7 @@ import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Roles } from '../../auth/presentation/decorators.js';
 import { OPTIONAL_MODULES, tierIsManaged, type OptionalModule } from '../../system/domain/optional-module.js';
+import { TenantEvents } from '../../events/domain/tenant-events.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../domain/ports/tenant.repository.js';
 import { TenantId } from './tenant-context.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
@@ -43,6 +44,7 @@ export class TenantsController {
     @Inject(TENANT_REPOSITORY) private readonly tenants: TenantRepository,
     private readonly config: ConfigService,
     @Inject(OPTIONAL_MODULES) private readonly modules: OptionalModule[],
+    private readonly events: TenantEvents,
   ) {}
 
   // Own tenant (or the X-Tenant-Id target for a SuperAdmin).
@@ -94,11 +96,15 @@ export class TenantsController {
     }
     // Billing installed and configured: tiers follow subscriptions, and its next update would undo this one. The
     // current tier sent back unchanged (a form that always sends both fields) is fine.
-    if (body.tier !== undefined && tierIsManaged(this.modules, (name) => this.config.get<string>(name) || undefined)) {
-      const current = this.found(await this.tenants.findById(id));
-      if (current.tier !== body.tier) throw new ConflictException('Tiers follow subscriptions in this deployment (billing)');
+    const before = body.tier === undefined ? null : this.found(await this.tenants.findById(id));
+    if (before && before.tier !== body.tier && tierIsManaged(this.modules, (name) => this.config.get<string>(name) || undefined)) {
+      throw new ConflictException('Tiers follow subscriptions in this deployment (billing)');
     }
-    return this.found(await this.tenants.update(id, body));
+    const updated = this.found(await this.tenants.update(id, body));
+    if (before && before.tier !== updated.tier) {
+      await this.events.publish(id, 'tenant.tier_changed', { tier: updated.tier, previousTier: before.tier });
+    }
+    return updated;
   }
 
   @Roles('SuperAdmin')

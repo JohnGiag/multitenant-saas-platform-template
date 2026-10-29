@@ -94,6 +94,11 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - **Background jobs:** heavy work (emails, webhooks, processing) runs on BullMQ workers. Every job payload carries `tenantId`, and the worker loads that tenant's secrets when it runs (no secrets in job payloads). Use retries with backoff, and send jobs that run out of attempts to a **dead-letter queue**. New queues use `JobsModule.registerQueue(name)` (shared retry policy + `<name>-dlq`) and a worker extending `DeadLetteringWorker` (`modules/jobs`), which handles dead-lettering, the startup sweep, shutdown during a Redis outage, and dropping a deleted tenant's jobs. Every outgoing HTTP call has a timeout (`AbortSignal.timeout`), so a hung provider cannot hold a worker slot.
 - **Pagination:** every list endpoint uses **keyset (cursor) pagination** over a stable order (e.g. `(created_at, id)`), backed by an index that starts with `tenant_id`. Never use `OFFSET`. Use `common/keyset.ts` (`keysetArgs` + `keysetPage`, cursor validated by `keysetCursorSchema(<sort field's Zod type>)`, e.g. `z.iso.datetime()` for `created_at`) with an index on `(tenant_id, <field>, id)`; a unique sort key can use `toCursorPage` directly. `apps/api/test/pagination.e2e.test.mjs` shows how to prove the index is used with `EXPLAIN`.
 
+## Events and webhooks
+
+- Report what happened in a tenant with `TenantEvents.publish(tenantId, type, data)` (`modules/events`), after the change commits. Payloads leave the platform: ids and roles only, never emails, names or secrets. A module publishing its own types declares them with `TenantEvents.declare`.
+- The optional `webhooks` module delivers them to the tenant's endpoints (Standard Webhooks signatures, its own retry schedule). **Every outgoing request to a tenant-chosen URL goes through `postWebhook`** (`optional/webhooks/infrastructure/https-delivery.ts`), which refuses non-public addresses at connection time (SSRF). Never call a tenant-chosen URL with plain `fetch`.
+
 ## Notifications
 
 - A multi-channel dispatcher with these channels: **SSE** (real-time web updates), **FCM** (push), **Resend** (transactional email).

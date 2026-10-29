@@ -1,0 +1,31 @@
+import type {
+  CreatedWebhookEndpoint,
+  CreateWebhookEndpointDto,
+  CursorPage,
+  UpdateWebhookEndpointDto,
+  WebhookEndpoint,
+  WebhookEndpointPageQuery,
+  WebhookSecret,
+} from '@repo/shared-types';
+
+export const WEBHOOK_SERVICE = Symbol('WebhookService');
+
+// Enough for a few systems per tenant; each one multiplies every event's deliveries.
+export const MAX_ENDPOINTS_PER_TENANT = 10;
+
+export interface WebhookService {
+  list(tenantId: string, query: WebhookEndpointPageQuery): Promise<CursorPage<WebhookEndpoint>>;
+  // Throws WebhookInputError (bad URL, unknown event type) or WebhookLimitError.
+  create(tenantId: string, input: CreateWebhookEndpointDto): Promise<CreatedWebhookEndpoint>;
+  // Null when the endpoint is not this tenant's.
+  update(tenantId: string, id: string, input: UpdateWebhookEndpointDto): Promise<WebhookEndpoint | null>;
+  remove(tenantId: string, id: string): Promise<boolean>;
+  // The old secret stops signing at once. Null when the endpoint is not this tenant's.
+  rotateSecret(tenantId: string, id: string): Promise<WebhookSecret | null>;
+  // Queues a "webhook.test" delivery to this endpoint only. Null when the endpoint is not this tenant's.
+  sendTest(tenantId: string, id: string): Promise<'queued' | 'disabled' | null>;
+  eventTypes(): string[];
+}
+
+export class WebhookInputError extends Error {}
+export class WebhookLimitError extends Error {}

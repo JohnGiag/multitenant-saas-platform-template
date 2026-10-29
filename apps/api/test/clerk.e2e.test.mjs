@@ -5,6 +5,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { after, before, test } from 'node:test';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { TenantEvents } from '../dist/modules/events/domain/tenant-events.js';
 import { cleanup, db, randomIp, startApp } from './helpers.mjs';
 
 const DASHBOARD = 'https://dashboard.example.test';
@@ -14,6 +15,8 @@ const org = (name) => `org_${name}_${run}`;
 const clerkUser = (name) => `user_${name}_${run}`;
 
 let issuer, jwksServer, signingKey, publicKey, otherKey, app, base, call;
+// Every event the app publishes (what the webhooks module would deliver).
+const published = [];
 
 before(async () => {
   ({ privateKey: signingKey, publicKey } = await generateKeyPair('RS256'));
@@ -33,6 +36,7 @@ before(async () => {
     CLERK_AUTHORIZED_PARTIES: DASHBOARD,
   });
   ({ app, base, call } = await startApp());
+  app.get(TenantEvents).subscribe(async (event) => void published.push(event));
 });
 
 after(async () => {
@@ -210,9 +214,23 @@ test('email changes follow the Clerk user; leaving an organization or deleting t
   assert.equal(await me(token(dee, org('two'))), 401);
   assert.equal((await me(token(dee, org('one')))).kind, 'user');
 
+  const [one, two] = await Promise.all(['one', 'two'].map((name) => db.tenant.findUniqueOrThrow({ where: { clerkOrgId: org(name) } })));
+  const memberIn = (tenantId) => published.find((e) => e.type === 'member.joined' && e.tenantId === tenantId)?.data.userId;
+  const [inOne, inTwo] = [memberIn(one.id), memberIn(two.id)];
+  assert.ok(inOne && inTwo, 'each membership was announced to its tenant');
+
   assert.equal(await webhook('user.deleted', { id: dee, deleted: true }), 204);
   assert.equal(await me(token(dee, org('one'))), 401);
   assert.equal(await db.user.count({ where: { clerkUserId: dee } }), 0);
+  const removed = published.filter((e) => e.type === 'member.removed').map((e) => [e.tenantId, e.data.userId]);
+  assert.deepEqual(
+    removed.filter(([tenantId]) => tenantId === one.id || tenantId === two.id),
+    [
+      [two.id, inTwo],
+      [one.id, inOne],
+    ],
+    'leaving one organization, then deletion from the other',
+  );
 });
 
 test('an email already taken in one tenant skips the change there only', async () => {

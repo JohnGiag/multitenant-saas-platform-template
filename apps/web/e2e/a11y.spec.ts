@@ -4,8 +4,8 @@ import { expectAccessible, sessionFile, type Role } from './fixtures';
 // Every page each role can open, checked against WCAG 2.2 AA with axe. Pages a role cannot open answer 404 and are
 // covered by the role that can.
 const PAGES: Record<Role, string[]> = {
-  admin: ['/', '/users', '/api-keys', '/files', '/billing', '/billing?checkout_session=cs_test_e2e', '/notifications', '/audit', '/settings', '/account'],
-  auditor: ['/users', '/api-keys', '/audit', '/settings', '/billing'],
+  admin: ['/', '/users', '/api-keys', '/files', '/billing', '/billing?checkout_session=cs_test_e2e', '/webhooks', '/notifications', '/audit', '/settings', '/account'],
+  auditor: ['/users', '/api-keys', '/audit', '/settings', '/billing', '/webhooks'],
   super: ['/tenants', '/users', '/audit'],
 };
 

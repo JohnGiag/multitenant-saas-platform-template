@@ -36,6 +36,7 @@ Tenants, sign-in, roles, API keys, encrypted per-tenant secrets, rate limits, ba
 | **Rate limiting** | Redis sliding window per tenant, caller and tier, plus per-account login limits. Answers `429` with `Retry-After`. |
 | **Background jobs** | BullMQ with retries, exponential backoff and a dead-letter queue. Workers load secrets only when a job runs. |
 | **Notifications** | Server-Sent Events across all API instances (Redis Pub/Sub), plus email and push as pluggable channels. |
+| **Outbound webhooks** | A tenant's events (members, API keys, tier changes, and your own) delivered to its HTTPS endpoints, signed with Standard Webhooks and retried for about a day. Never sent to private networks. |
 | **Billing** | Stripe subscriptions set each tenant's tier. Stripe hosts checkout and the customer portal; a cancelled plan stays paid until its period ends. |
 | **File storage** | R2 or any S3-compatible store through presigned URLs, with a per-tenant quota. File bytes never touch the API. |
 | **Audit log** | Every successful write is recorded with its actor and target, and can be filtered by actor, target and time. |
@@ -156,6 +157,7 @@ Each app reads its own env file: `apps/api/.env` and `apps/web/.env.local`. Both
 | `DASHBOARD_PROXY_SECRET` | | Shared with the dashboard, at least 32 characters (see [Rate limiting](#rate-limiting)) |
 | `CLERK_ISSUER`, `CLERK_WEBHOOK_SECRET`, `CLERK_AUTHORIZED_PARTIES` | Clerk mode | See [Clerk mode](#clerk-mode) |
 | `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_REGION` | | The platform bucket. Set all of them or none; `STORAGE_REGION` is optional |
+| `WEBHOOKS_ALLOW_PRIVATE` | | `true` lets webhook endpoints use http and private addresses, to test against a receiver on your machine. Refused when `NODE_ENV=production` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ENTERPRISE` | | Billing (see [Billing](#billing)). Set all of them or none; with none, billing is installed but off |
 | `JOB_ATTEMPTS`, `JOB_BACKOFF_MS`, `WORKER_CONCURRENCY`, `DLQ_MAX_ENTRIES`, `QUEUE_PREFIX` | | Job tuning. Defaults: 3, 1000 ms, 5, 10 000 and `bull` |
 
@@ -313,6 +315,17 @@ Optional module `billing`, with Stripe. The platform charges its tenants from it
 3. **Webhook:** add an endpoint for `https://<your-api>/v1/billing/webhook` with the `customer.subscription.*` events, and put its signing secret in `STRIPE_WEBHOOK_SECRET`. Locally, `stripe listen --forward-to localhost:3000/v1/billing/webhook` prints a secret to use instead.
 4. Check your account with `pnpm --filter @repo/api test:live`: the Stripe live test runs only with an `sk_test_` key.
 
+## Webhooks
+
+Optional module `webhooks`: a tenant's events, delivered to HTTPS endpoints its `TenantAdmin` registers (Webhooks page, or `/v1/webhooks`). `Auditor`s read the list; `SuperAdmin` stays out.
+
+- **Events:** `member.joined`, `member.role_changed`, `member.removed`, `api_key.created`, `api_key.revoked` and `tenant.tier_changed`, plus `webhook.test` from the "Send test event" button. Each endpoint takes all of them, or only the ones it lists. Payloads carry ids and roles, never emails or names.
+- **Your own events:** inject `TenantEvents` (`modules/events`) and call `publish(tenantId, 'badge.earned', { … })`; a module adds its types to the list endpoints can choose from with `declare('badge.earned')`. With the webhooks module deleted, publishing does nothing.
+- **Signed with [Standard Webhooks](https://www.standardwebhooks.com)** (the scheme Svix and Clerk use): `webhook-id`, `webhook-timestamp` and `webhook-signature` headers, verified with the endpoint's `whsec_…` secret by an existing library in any language. The secret is shown once, stored encrypted, and can be rotated.
+- **Retried for about a day** on the Standard Webhooks schedule (5 s, 5 min, 30 min, 2 h, 5 h, 10 h, 10 h) when the receiver times out or answers `408`, `429` or `5xx`. Any other answer is final. Deliveries that fail for good wait in `webhooks-dlq`. Receivers should dedupe by `webhook-id` and order by the payload's `timestamp`: retries can arrive late and out of order.
+- **Never sent to private networks.** Endpoints must use https. Each delivery checks the address it actually connects to, so a hostname cannot later resolve to the API's own network, a private range or the cloud metadata service (169.254.169.254). Redirects are not followed.
+- **At most 10 endpoints per tenant.**
+
 ## Audit log
 
 - **Every successful write** (`POST`, `PUT`, `PATCH`, `DELETE`) by a signed-in user or API key is recorded: the actor (kind, id, role), the route pattern, the `:id` target, the status and, when a `SuperAdmin` acted on another tenant, which one. Ids only: no request bodies, raw URLs or personal data.
@@ -322,7 +335,7 @@ Optional module `billing`, with Stripe. The platform charges its tenants from it
 
 ## Modules and integrations
 
-- **Optional modules** live in `apps/api/src/optional/<key>/` (billing, email, push and storage today). Delete a module's folder to uninstall it: nothing else imports it, and an architecture test enforces that.
+- **Optional modules** live in `apps/api/src/optional/<key>/` (billing, email, push, storage and webhooks today). Delete a module's folder to uninstall it: nothing else imports it, and an architecture test enforces that.
 - **`GET /v1/system/capabilities`** reports which modules are installed and enabled for the tenant. The dashboard's Settings page shows one tab per module that takes tenant configuration. Known providers (`resend`, `fcm`, `r2`) get a form, and a module added later gets a JSON editor, with no dashboard change.
 - **BYOK secrets** are stored encrypted with AES-256-GCM, with a random IV each time and bound to their tenant and provider. Only masked values ever leave the API. Only providers used by an installed module are accepted.
 

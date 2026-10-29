@@ -79,6 +79,41 @@ test.describe('TenantAdmin', () => {
   });
 });
 
+test.describe('Webhooks', () => {
+  test.describe('TenantAdmin', () => {
+    test.use({ storageState: sessionFile('admin') });
+
+    test('adds an endpoint for chosen events, sees its secret once, then turns it off and removes it', async ({ page }) => {
+      const url = `https://hooks.example.com/e2e-${Date.now()}`;
+      await page.goto('/');
+      await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Webhooks' }).click();
+      await page.getByLabel('Endpoint URL').fill(url);
+      await page.getByRole('checkbox', { name: 'member.joined' }).click();
+      await page.getByRole('button', { name: 'Add endpoint' }).click();
+      await expect(page.getByRole('alert').filter({ hasText: 'Shown only now' })).toBeVisible();
+      await expect(page.getByLabel('Signing secret')).toHaveValue(/^whsec_/);
+
+      const row = page.getByRole('row').filter({ hasText: url });
+      await expect(row.getByText('member.joined')).toBeVisible();
+      await row.getByRole('button', { name: 'Turn off' }).click();
+      await expect(row.getByText('Off', { exact: true })).toBeVisible();
+      page.once('dialog', (dialog) => void dialog.accept());
+      await row.getByRole('button', { name: 'Delete' }).click();
+      await expect(page.getByRole('row').filter({ hasText: url })).toHaveCount(0);
+    });
+  });
+
+  test.describe('Auditor', () => {
+    test.use({ storageState: sessionFile('auditor') });
+
+    test('reads the endpoints but cannot add or change them', async ({ page }) => {
+      await page.goto('/webhooks');
+      await expect(page.getByRole('heading', { level: 2, name: 'Endpoints' })).toBeVisible();
+      await expect(page.getByRole('button', { name: /Add endpoint|Delete|Turn off|Rotate/ })).toHaveCount(0);
+    });
+  });
+});
+
 test.describe('Billing', () => {
   test.describe('TenantAdmin', () => {
     test.use({ storageState: sessionFile('admin') });

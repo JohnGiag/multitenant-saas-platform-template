@@ -36,6 +36,7 @@ import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/ra
 import { passwordChangeKey } from '../../rate-limit/domain/rate-limit-policy.js';
 import { clearAccountAttempts, countOwnAttempt } from '../../rate-limit/presentation/account-attempts.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
+import { TenantEvents } from '../../events/domain/tenant-events.js';
 import { USER_REPOSITORY, type UserRepository } from '../domain/ports/user.repository.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 
@@ -47,6 +48,7 @@ export class UsersController {
   constructor(
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
     @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
+    private readonly events: TenantEvents,
   ) {}
 
   @Roles('SuperAdmin', 'TenantAdmin', 'Auditor')
@@ -66,7 +68,9 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(UpdateUserSchema)) { role }: UpdateUserDto,
   ): Promise<User> {
-    return orFail(await this.users.updateRole(tenantId, id, role));
+    const user = orFail(await this.users.updateRole(tenantId, id, role));
+    await this.events.publish(tenantId, 'member.role_changed', { userId: user.id, role: user.role });
+    return user;
   }
 
   @LocalAuthOnly()
@@ -75,6 +79,7 @@ export class UsersController {
   @HttpCode(204)
   async remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
     orFail(await this.users.remove(tenantId, id));
+    await this.events.publish(tenantId, 'member.removed', { userId: id });
   }
 
   // The caller's own account, so the principal (not @TenantId) decides whose password this is.

@@ -25,6 +25,9 @@ process.env.API_DOCS = 'false';
 // stub misses fail instead of sending. Only test/live/ uses the real RESEND_PLATFORM_KEY.
 process.env.RESEND_PLATFORM_KEY = 're_offline_test_suite';
 process.env.APP_URL = 'https://app.example.test';
+// Billing off unless a test turns it on with its own fake keys (billing.e2e): real test-mode keys in .env are for
+// test/live/ only. Empty, not deleted, so ConfigModule does not fill them back in from .env.
+for (const name of ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PRICE_PRO', 'STRIPE_PRICE_ENTERPRISE']) process.env[name] = '';
 
 // Same idea for queues: each test process has its own, so no worker picks up another file's jobs.
 export const QUEUE_PREFIX = `test-${crypto.randomUUID().slice(0, 8)}`;

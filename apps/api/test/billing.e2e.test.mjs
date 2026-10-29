@@ -325,7 +325,8 @@ test('deleting a tenant cancels its subscription in Stripe first; a failure keep
 
 test('without STRIPE_* the module is installed but off: no webhook, no checkout, and tiers are set by hand', async () => {
   const saved = { ...STRIPE };
-  for (const name of Object.keys(STRIPE)) delete process.env[name];
+  // Empty rather than deleted, so ConfigModule does not read them back from .env.
+  for (const name of Object.keys(STRIPE)) process.env[name] = '';
   const off = await startApp();
   try {
     const superToken = await off.login(tenants.platform, 'super@example.com');

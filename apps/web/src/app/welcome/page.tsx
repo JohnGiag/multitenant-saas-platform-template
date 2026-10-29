@@ -3,13 +3,16 @@ import {
   ArrowUpRight,
   Bell,
   Building2,
+  Container,
   CloudUpload,
+  CreditCard,
   Fingerprint,
   Gauge,
   LockKeyhole,
   Puzzle,
   ScrollText,
   ShieldCheck,
+  Webhook,
   Workflow,
 } from 'lucide-react';
 import type { Metadata } from 'next';
@@ -50,9 +53,12 @@ const FEATURES = [
   { icon: Bell, title: 'feature.notifications.title', text: 'feature.notifications.text' },
   { icon: ScrollText, title: 'feature.audit.title', text: 'feature.audit.text' },
   { icon: CloudUpload, title: 'feature.uploads.title', text: 'feature.uploads.text' },
+  { icon: CreditCard, title: 'feature.billing.title', text: 'feature.billing.text' },
+  { icon: Webhook, title: 'feature.webhooks.title', text: 'feature.webhooks.text' },
+  { icon: Container, title: 'feature.deploy.title', text: 'feature.deploy.text' },
 ];
 
-const STACK = ['NestJS', 'Next.js', 'PostgreSQL', 'Prisma', 'Redis', 'BullMQ', 'Turborepo', 'Tailwind CSS', 'shadcn/ui'];
+const STACK = ['NestJS', 'Next.js', 'PostgreSQL', 'Prisma', 'Redis', 'BullMQ', 'Stripe', 'Docker', 'Turborepo', 'Tailwind CSS', 'shadcn/ui'];
 
 const glass = 'border border-white/70 bg-card/60 shadow-xl shadow-primary/5 backdrop-blur-xl dark:border-white/10 dark:bg-card/50';
 
@@ -208,11 +214,15 @@ function ApiWindow({ className }: { className?: string }) {
           <span className="text-muted-foreground">{'{\n  '}</span>
           <Key>capabilities</Key>
           <span className="text-muted-foreground">{': [\n    '}</span>
+          <Entry k="billing" provider={null} enabled />
+          <span className="text-muted-foreground">{',\n    '}</span>
           <Entry k="email" provider="resend" enabled />
           <span className="text-muted-foreground">{',\n    '}</span>
           <Entry k="push" provider="fcm" enabled={false} />
           <span className="text-muted-foreground">{',\n    '}</span>
           <Entry k="storage" provider="r2" enabled />
+          <span className="text-muted-foreground">{',\n    '}</span>
+          <Entry k="webhooks" provider={null} enabled />
           <span className="text-muted-foreground">{'\n  ]\n}'}</span>
         </code>
       </pre>
@@ -224,12 +234,14 @@ function Key({ children }: { children: string }) {
   return <span className="text-primary">&quot;{children}&quot;</span>;
 }
 
-function Entry({ k, provider, enabled }: { k: string; provider: string; enabled: boolean }) {
+// `provider` null: a module that needs no tenant configuration (billing uses the platform's Stripe account).
+function Entry({ k, provider, enabled }: { k: string; provider: string | null; enabled: boolean }) {
   return (
     <>
       <span className="text-muted-foreground">{'{ '}</span>
       <Key>key</Key>: <span className="text-violet-700 dark:text-violet-300">&quot;{k}&quot;</span>, <Key>integration</Key>:{' '}
-      <span className="text-violet-700 dark:text-violet-300">&quot;{provider}&quot;</span>, <Key>enabled</Key>:{' '}
+      {provider === null ? <span className="text-muted-foreground">null</span> : <span className="text-violet-700 dark:text-violet-300">&quot;{provider}&quot;</span>},{' '}
+      <Key>enabled</Key>:{' '}
       <span className={enabled ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}>{String(enabled)}</span>
       <span className="text-muted-foreground">{' }'}</span>
     </>

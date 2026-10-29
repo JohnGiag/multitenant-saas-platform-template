@@ -2,7 +2,9 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EmailSchema } from '@repo/shared-types';
 import { z } from 'zod';
 import { hasCode } from '../../../common/prisma-errors.js';
+import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
+import { TenantEvents } from '../../events/domain/tenant-events.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../../tenancy/domain/ports/tenant.repository.js';
 
 const OrganizationSchema = z.object({ id: z.string().min(1), name: z.string() });
@@ -32,6 +34,7 @@ export class ClerkWebhookHandler {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(TENANT_REPOSITORY) private readonly tenants: TenantRepository,
+    private readonly events: TenantEvents,
   ) {}
 
   // `at`: when Clerk created the event (the same on every retry). Throws a ZodError for a payload
@@ -50,19 +53,15 @@ export class ClerkWebhookHandler {
         // Clerk decides membership, so this bypasses our last-TenantAdmin rule.
         const { organization, public_user_data } = MembershipSchema.parse(data);
         await this.tombstone(membershipId(organization.id, public_user_data.user_id), at);
-        await this.prisma.user.deleteMany({
-          // createdAt (the membership event's time): a stale deletion must not remove a member re-added after it.
-          where: { clerkUserId: public_user_data.user_id, tenant: { clerkOrgId: organization.id }, createdAt: { lt: at } },
-        });
-        return;
+        // createdAt (the membership event's time): a stale deletion must not remove a member re-added after it.
+        return this.removeMembers({ clerkUserId: public_user_data.user_id, tenant: { clerkOrgId: organization.id }, createdAt: { lt: at } });
       }
       case 'user.updated':
         return this.updateEmail(ClerkUserSchema.parse(data));
       case 'user.deleted': {
         const { id } = DeletedSchema.parse(data);
         await this.tombstone(id, at);
-        await this.prisma.user.deleteMany({ where: { clerkUserId: id } });
-        return;
+        return this.removeMembers({ clerkUserId: id });
       }
       // organizationMembership.updated (roles are ours) and every other event: nothing to mirror.
       default:
@@ -103,15 +102,25 @@ export class ClerkWebhookHandler {
         // Only the starting role comes from Clerk; after that roles are managed here.
         const startingRole = role === 'org:admin' ? 'TenantAdmin' : 'User';
         // createdAt on Clerk's clock, so organizationMembership.deleted compares like with like.
-        await this.prisma.user.create({
+        const user = await this.prisma.user.create({
           data: { tenantId: tenant.id, email: email.data, role: startingRole, clerkUserId, createdAt: at },
+          select: { id: true },
         });
+        await this.events.publish(tenant.id, 'member.joined', { userId: user.id, role: startingRole });
       }
     } catch (error) {
       // A concurrent delivery of the same event created it first.
       if (hasCode(error, 'P2002')) return;
       throw error;
     }
+  }
+
+  // Each removed membership is reported to its own tenant.
+  private async removeMembers(where: Prisma.UserWhereInput): Promise<void> {
+    const members = await this.prisma.user.findMany({ where, select: { id: true, tenantId: true } });
+    if (members.length === 0) return;
+    await this.prisma.user.deleteMany({ where: { id: { in: members.map((m) => m.id) } } });
+    for (const { id, tenantId } of members) await this.events.publish(tenantId, 'member.removed', { userId: id });
   }
 
   // Organization deleted in Clerk: the tenant and everything in it go too.

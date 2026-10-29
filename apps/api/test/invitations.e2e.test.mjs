@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { after, before, beforeEach, test } from 'node:test';
+import { TenantEvents } from '../dist/modules/events/domain/tenant-events.js';
 import { LOGIN_ACCOUNT_LIMIT } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
 import { cleanup, db, PASSWORD, randomIp, seedTenant, seedUser, startApp, waitFor } from './helpers.mjs';
 
@@ -21,6 +22,8 @@ const tenants = {};
 const tokens = {};
 const apps = [];
 let call, login;
+// Every event the app publishes (what the webhooks module would deliver).
+const published = [];
 
 before(async () => {
   tenants.platform = await seedTenant('invite-e2e-platform', { super: 'SuperAdmin' });
@@ -28,6 +31,7 @@ before(async () => {
   tenants.b = await seedTenant('invite-e2e-b', { admin: 'TenantAdmin' });
   const started = await startApp();
   apps.push(started.app);
+  started.app.get(TenantEvents).subscribe(async (event) => void published.push(event));
   ({ call, login } = started);
   tokens.super = await login(tenants.platform, 'super@example.com');
   tokens.adminA = await login(tenants.a, 'admin@example.com');
@@ -88,6 +92,9 @@ test('a TenantAdmin invites; the platform sends it; the invitee chooses their pa
     { actorRole: joined.actorRole, method: joined.method, route: joined.route, status: joined.status },
     { actorRole: 'Auditor', method: 'POST', route: '/v1/invitations/accept', status: 201 },
   );
+
+  const event = published.find((e) => e.type === 'member.joined' && e.data.userId === user.id);
+  assert.deepEqual({ tenantId: event?.tenantId, data: event?.data }, { tenantId: tenants.a, data: { userId: user.id, role: 'Auditor' } });
 
   // Single use, and the invitation is gone.
   assert.equal((await accept(token)).status, 400);

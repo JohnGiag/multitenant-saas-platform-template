@@ -43,6 +43,7 @@ model Tenant {
   auditLogs      AuditLog[]
   storageObjects StorageObject[]
   billingAccount BillingAccount?
+  webhookEndpoints WebhookEndpoint[]
 
   @@map("tenants")
 }
@@ -256,6 +257,29 @@ model BillingAccount {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("billing_accounts")
+}
+
+// Where a tenant's events are delivered, used by the optional webhooks module (src/optional/webhooks).
+model WebhookEndpoint {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  url             String
+  description     String?
+  // Event types sent here; empty means all of them.
+  events          String[]
+  // The whsec_ signing secret, AES-256-GCM sealed like tenant integrations and bound to the tenant. Shown once.
+  encryptedSecret Bytes    @map("encrypted_secret")
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // Cascade: core tenant deletion must not need to know this optional table; its queued deliveries are dropped by
+  // the worker's own deletion hook.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // UUIDv7 ids are time-ordered, so (tenant_id, id) also serves keyset pagination.
+  @@index([tenantId, id])
+  @@map("webhook_endpoints")
 }
 
 // The dashboard's text, one row per language and key (GET /v1/translations/:locale). Platform-wide, not
