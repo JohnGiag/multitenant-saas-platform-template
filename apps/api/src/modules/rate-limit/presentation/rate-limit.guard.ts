@@ -9,10 +9,12 @@ import {
   type ExecutionContext,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import type { AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { forwardedClientIp } from '../domain/forwarded-client.js';
 import { RATE_LIMITER, type RateLimiter, type RateLimitResult } from '../domain/ports/rate-limiter.port.js';
 import { planRateLimit } from '../domain/rate-limit-policy.js';
+import { FAIL_OPEN_KEY } from './fail-open.js';
 
 interface RateLimitedRequest extends AuthenticatedRequest {
   ip?: string;
@@ -31,6 +33,7 @@ export class RateLimitGuard implements CanActivate {
 
   constructor(
     @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
+    private readonly reflector: Reflector,
     config: ConfigService,
   ) {
     this.forwardedIp = forwardedClientIp(config.get<string>('DASHBOARD_PROXY_SECRET') || undefined);
@@ -53,11 +56,12 @@ export class RateLimitGuard implements CanActivate {
     try {
       result = await this.limiter.consume(plan.key, plan.limit, plan.windowMs);
     } catch (err) {
+      const failOpen = plan.failOpen || this.reflector.getAllAndOverride<boolean>(FAIL_OPEN_KEY, [ctx.getHandler(), ctx.getClass()]);
       // Message only: a stack trace per request floods the logs during an outage.
       this.logger.error(
-        `Rate limit check failed for ${plan.key}, failing ${plan.failOpen ? 'open' : 'closed'}: ${err instanceof Error ? err.message : String(err)}`,
+        `Rate limit check failed for ${plan.key}, failing ${failOpen ? 'open' : 'closed'}: ${err instanceof Error ? err.message : String(err)}`,
       );
-      if (plan.failOpen) return true;
+      if (failOpen) return true;
       throw new ServiceUnavailableException();
     }
 

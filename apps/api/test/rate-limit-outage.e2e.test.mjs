@@ -30,3 +30,10 @@ test('public routes fail closed: login answers 503', async () => {
   const res = await call('POST', '/auth/login', { body: { tenantId, email: 'a@example.com', password: PASSWORD } });
   assert.equal(res.status, 503);
 });
+
+test('health probes fail open: liveness answers, readiness says Redis is down', async () => {
+  assert.equal((await call('GET', '/health')).status, 200);
+  const ready = await call('GET', '/health/ready');
+  assert.equal(ready.status, 503);
+  assert.match((await ready.json()).message, /^Not ready: redis$/);
+});

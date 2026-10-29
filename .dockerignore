@@ -1,0 +1,15 @@
+# Built inside the image; secrets never enter the build context.
+**/node_modules
+**/dist
+**/.next
+**/.next-e2e
+**/.turbo
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+.git
+apps/api/src/generated
+apps/web/test-results
+apps/web/playwright-report
+apps/web/e2e/.auth

@@ -39,6 +39,7 @@ Tenants, sign-in, roles, API keys, encrypted per-tenant secrets, rate limits, ba
 | **File storage** | R2 or any S3-compatible store through presigned URLs, with a per-tenant quota. File bytes never touch the API. |
 | **Audit log** | Every successful write is recorded with its actor and target, and can be filtered by actor, target and time. |
 | **Plug-and-play modules** | Optional modules (email, push, storage) are folders: delete one and everything still compiles. |
+| **Deployable** | Docker images for the API (plus a migration job) and the dashboard, with liveness and readiness probes. |
 | **Accessible dashboard** | Next.js App Router with shadcn/ui and Radix. Tested with Playwright, with axe on every page. |
 
 ## Architecture
@@ -253,12 +254,15 @@ Every route is limited with a Redis sliding window over the last 60 seconds, wit
 |---|---|---|---|
 | Signed-in user or API key | per tenant and caller | per minute: `free` 120, `pro` 600, `enterprise` 3000 | served, unmetered |
 | Unauthenticated (e.g. sign-in) | per client IP and route | 100 per minute | `503` |
-| Sign-in attempts | per email (any tenant), or per account when a `tenantId` is sent; from any IP | 10 per 15 minutes; a success resets it | `503` |
-| Password reset requests | per email | 10 per 15 minutes | `503` |
+| Health probes (`/v1/health`, `/v1/health/ready`) | per client IP and route | 100 per minute | served, unmetered |
+| Sign-in attempts | per email (any tenant), or per account when a `tenantId` is sent: per client IP, and for all IPs together | 10 per 15 minutes per IP (a success resets it); 100 per 15 minutes from all IPs | `503` |
+| Password reset requests | per email: per client IP, and for all IPs together | 10 per 15 minutes per IP; 30 from all IPs | `503` |
+
+Counting per IP first means a stranger's wrong guesses lock out only the stranger's address, never the account's owner; the all-IPs ceiling still stops guessing spread across many addresses. A password reset lifts both.
 
 **Client IPs.** Behind a load balancer, set `TRUST_PROXY_HOPS` to the number of proxies in front of the API.
 
-**Per browser behind the dashboard.** Sign-in, invitation and reset requests reach the API from the dashboard's server, so by default every browser shares its one bucket. To limit per browser instead:
+**Per browser behind the dashboard.** Sign-in, invitation and reset requests reach the API from the dashboard's server, so without the steps below every browser shares its one bucket. That is why the dashboard refuses to start in production without `DASHBOARD_PROXY_SECRET`. To limit per browser:
 1. Set the same `DASHBOARD_PROXY_SECRET` (32+ characters) in both apps.
 2. In `apps/web`, set `TRUST_PROXY_HOPS` to the number of proxies in front of the dashboard.
 
@@ -359,7 +363,7 @@ A route without `@ApiDoc` stops the document from building, and a test checks th
 | Dashboard end-to-end | `pnpm test:e2e` | Playwright (Chromium) through the real API: sign-in (including keyboard only), the main flows per role, and **axe on every page** (WCAG 2.2 AA) |
 
 - **`pnpm test:e2e`** starts the built API and a local-mode build of the dashboard on ports 3100 and 3101, so your dev servers keep running. It seeds its own tenants and deletes them afterwards. The first time, install the browser: `pnpm --filter @repo/web exec playwright install chromium`.
-- **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every push to `main` and every pull request: install with a frozen lockfile, migrations, lint, typecheck, `pnpm test` and `pnpm test:e2e`, against PostgreSQL 17 and Redis 7 service containers.
+- **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every push to `main` and every pull request: install with a frozen lockfile, migrations, lint, typecheck, `pnpm test` and `pnpm test:e2e`, against PostgreSQL 17 and Redis 7 service containers. A second job builds the three Docker images, so a Dockerfile cannot break unnoticed.
   - **No repository secrets needed:** the workflow sets the database and Redis URLs, and generates throwaway `JWT_SECRET` and `BYOK_MASTER_KEY` values for each run.
   - **On failure,** the Playwright report with traces is attached to the run for 7 days.
   - **Not in CI:** Clerk mode and real emails. Without `STORAGE_*`, the Files page's accessibility check is skipped.
@@ -373,6 +377,28 @@ Built towards ISO 27001 (access control, encryption, audit logs), ISO 27701 (min
 - **Logs:** never contain secrets, tokens, passwords or full personal data. Rate-limit keys hash emails.
 - **Outbound calls** all have timeouts, so a hung provider cannot hold a worker.
 
+## Deployment
+
+Both apps ship as Docker images, built from the repository root. Each image runs as the unprivileged `node` user and has a `HEALTHCHECK`.
+
+```sh
+docker build -f apps/api/Dockerfile -t api .                     # the API server (port 3000)
+docker build -f apps/api/Dockerfile --target migrate -t api-migrate .  # applies migrations, then exits
+docker build -f apps/web/Dockerfile -t web .                     # the dashboard (port 3001)
+```
+
+1. **Migrate first.** Run `api-migrate` with `DATABASE_URL` before starting a new API release: `docker run --rm -e DATABASE_URL=… api-migrate`.
+2. **Run the API** with the variables from [Configuration](#configuration). No `.env` file is copied into any image, and none is read from one.
+3. **Run the dashboard** with `API_URL`, `DASHBOARD_PROXY_SECRET` and, behind a proxy, `TRUST_PROXY_HOPS`. `AUTH_PROVIDER` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` are baked in at build time, so pass them as build arguments: `docker build --build-arg AUTH_PROVIDER=clerk --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_… -f apps/web/Dockerfile -t web .`. `CLERK_SECRET_KEY` is a runtime variable.
+
+| Probe | Path | Checks | Use it for |
+|---|---|---|---|
+| API liveness | `GET /v1/health` | nothing but the process | restarts |
+| API readiness | `GET /v1/health/ready` | Postgres and Redis (2 s each); `503` names what is down | taking an instance out of rotation |
+| Dashboard liveness | `GET /health` | nothing but the process (never calls the API) | restarts |
+
+Liveness checks no dependency on purpose: a Postgres or Redis outage should take instances out of rotation, not restart them all. Both API probes keep answering while Redis is down, unlike other public routes.
+
 ## Production checklist
 
 - [ ] Generate a strong `JWT_SECRET` and `BYOK_MASTER_KEY`, store them in a secret manager, and back up `BYOK_MASTER_KEY`.
@@ -383,6 +409,7 @@ Built towards ISO 27001 (access control, encryption, audit logs), ISO 27701 (min
 - [ ] Add a CORS rule for the dashboard's origin on every storage bucket.
 - [ ] Create the first `SuperAdmin`, and keep at least two.
 - [ ] Clerk mode: sign-up Restricted, and no organization creation or deletion by users.
+- [ ] Point your orchestrator's liveness probes at `/v1/health` (API) and `/health` (dashboard), and readiness at `/v1/health/ready`.
 - [ ] Make the `ci` check required for `main` (GitHub → Settings → Branches).
 
 ## Project structure
