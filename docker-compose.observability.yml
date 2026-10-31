@@ -1,0 +1,20 @@
+# Optional, local development only: metrics, traces and logs from a single container that bundles the OpenTelemetry
+# Collector, Prometheus, Tempo, Loki and Grafana. Not for production: see "Observability" in the README.
+#   docker compose -f docker-compose.observability.yml up -d
+#   pnpm --filter @repo/api start:otel
+# Grafana: http://localhost:3002 (admin / admin), which is why every port binds to localhost.
+name: enterprise-observability
+
+services:
+  lgtm:
+    image: grafana/otel-lgtm:0.39.0
+    ports:
+      - '127.0.0.1:3002:3000'
+      - '127.0.0.1:4318:4318'
+    volumes:
+      - lgtm-data:/data
+      - ./observability/api-dashboard.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/api-dashboard.json:ro
+      - ./observability/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro
+
+volumes:
+  lgtm-data:

@@ -77,6 +77,27 @@ test('signed out, / is the landing page, which leads to sign-in', async ({ page 
   await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
 });
 
+test('the landing page lists the new features, and its header link glides to them', async ({ page }) => {
+  await page.goto('/');
+  const main = page.getByRole('navigation', { name: 'Main' });
+  await main.getByRole('link', { name: 'Features' }).click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  // Part of the way there: a jump would already have arrived.
+  const landed = await page.evaluate(() => document.getElementById('features')!.getBoundingClientRect().top);
+  expect(landed).toBeGreaterThan(100);
+  await expect(page.getByRole('heading', { level: 3, name: 'Per-tenant feature flags' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 3, name: 'Observability' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Math.round(document.getElementById('features')!.getBoundingClientRect().top))).toBeLessThan(100);
+});
+
+test('the landing page jumps instead for people who ask for reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Features' }).click();
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)).toBe('auto');
+  await expect.poll(() => page.evaluate(() => Math.round(document.getElementById('features')!.getBoundingClientRect().top))).toBeLessThan(100);
+});
+
 test('a wrong password is announced on the form', async ({ page }) => {
   await signIn(page, fixtures().emails.admin, 'not the right password');
   await expect(page.getByText('Invalid credentials')).toBeVisible();

@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module, type DynamicModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ConnectionOptions } from 'bullmq';
+import { BullMQOtel } from 'bullmq-otel';
 import { redisConnection } from '../../infrastructure/redis/redis-connection.js';
 import { jobConfig } from './job-config.js';
 
@@ -17,6 +18,8 @@ export const deadLetterQueueName = (queue: string) => `${queue}-dlq`;
         // BullMQ's own options type (it accepts `url`), not the ioredis one redisConnection returns.
         connection: { ...redisConnection(config), maxRetriesPerRequest: null } as ConnectionOptions,
         prefix: jobConfig(config).prefix,
+        // Carries a request's trace into its job. Does nothing without telemetry.js.
+        telemetry: new BullMQOtel({ tracerName: 'jobs' }),
       }),
     }),
   ],

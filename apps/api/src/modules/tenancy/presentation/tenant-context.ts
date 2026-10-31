@@ -8,6 +8,7 @@ import {
   type CanActivate,
   type ExecutionContext,
 } from '@nestjs/common';
+import { trace } from '@opentelemetry/api';
 import { IdSchema } from '@repo/shared-types';
 import type { AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../domain/ports/tenant.repository.js';
@@ -25,7 +26,11 @@ export class TenantContextGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<TenantRequest>();
-    if (req.principal) req.tenantId = await this.resolve(req);
+    if (req.principal) {
+      req.tenantId = await this.resolve(req);
+      // On traces only: as a metric label it would add a time series per tenant.
+      trace.getActiveSpan()?.setAttribute('tenant.id', req.tenantId);
+    }
     return true;
   }
 

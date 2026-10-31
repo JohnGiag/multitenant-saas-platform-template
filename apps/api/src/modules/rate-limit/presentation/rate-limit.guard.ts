@@ -11,12 +11,15 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ModuleRef, Reflector } from '@nestjs/core';
+import { metrics } from '@opentelemetry/api';
 import type { AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { forwardedClientIp } from '../domain/forwarded-client.js';
 import { RATE_LIMITER, type RateLimiter, type RateLimitResult } from '../domain/ports/rate-limiter.port.js';
 import { planRateLimit } from '../domain/rate-limit-policy.js';
 import { FAIL_OPEN_KEY } from './fail-open.js';
 import { TRUSTED_CALLER_KEY, type TrustedCallerCheck } from './trusted-caller.js';
+
+const rejected = metrics.getMeter('rate-limit').createCounter('rate_limit.rejected', { description: 'Requests refused with 429' });
 
 interface RateLimitedRequest extends AuthenticatedRequest {
   ip?: string;
@@ -64,9 +67,9 @@ export class RateLimitGuard implements CanActivate {
       result = await this.limiter.consume(plan.key, plan.limit, plan.windowMs);
     } catch (err) {
       const failOpen = plan.failOpen || this.reflector.getAllAndOverride<boolean>(FAIL_OPEN_KEY, [ctx.getHandler(), ctx.getClass()]);
-      // Message only: a stack trace per request floods the logs during an outage.
+      // Message only: a stack trace per request floods the logs during an outage. Never plan.key: it can hold the client's IP.
       this.logger.error(
-        `Rate limit check failed for ${plan.key}, failing ${failOpen ? 'open' : 'closed'}: ${err instanceof Error ? err.message : String(err)}`,
+        `Rate limit check failed on ${req.method} ${req.route?.path ?? 'an unknown route'}, failing ${failOpen ? 'open' : 'closed'}: ${err instanceof Error ? err.message : String(err)}`,
       );
       if (failOpen) return true;
       throw new ServiceUnavailableException();
@@ -76,6 +79,7 @@ export class RateLimitGuard implements CanActivate {
     res.setHeader('X-RateLimit-Remaining', result.remaining);
     res.setHeader('X-RateLimit-Reset', result.resetSec);
     if (!result.allowed) {
+      rejected.add(1, { scope: req.principal ? 'authenticated' : 'public' });
       res.setHeader('Retry-After', result.resetSec);
       throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
     }

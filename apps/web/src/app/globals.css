@@ -27,6 +27,13 @@
     }
 }
 
+/* In-page links glide on the page that asks for it. Not on every page: route changes must still land at the top at once. */
+@media (prefers-reduced-motion: no-preference) {
+    html:has(.smooth-anchors) {
+        scroll-behavior: smooth;
+    }
+}
+
 @theme inline {
     --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
     --radius-sm: calc(var(--radius) * 0.6);

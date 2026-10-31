@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowRight,
   ArrowUpRight,
   Bell,
@@ -7,6 +8,7 @@ import {
   CloudUpload,
   CreditCard,
   Fingerprint,
+  Flag,
   Gauge,
   LockKeyhole,
   Puzzle,
@@ -55,17 +57,24 @@ const FEATURES = [
   { icon: CloudUpload, title: 'feature.uploads.title', text: 'feature.uploads.text' },
   { icon: CreditCard, title: 'feature.billing.title', text: 'feature.billing.text' },
   { icon: Webhook, title: 'feature.webhooks.title', text: 'feature.webhooks.text' },
+  { icon: Flag, title: 'feature.flags.title', text: 'feature.flags.text' },
+  {
+    icon: Activity,
+    title: 'feature.observability.title',
+    text: 'feature.observability.text',
+    wide: true,
+  },
   { icon: Container, title: 'feature.deploy.title', text: 'feature.deploy.text' },
 ];
 
-const STACK = ['NestJS', 'Next.js', 'PostgreSQL', 'Prisma', 'Redis', 'BullMQ', 'Stripe', 'Docker', 'Turborepo', 'Tailwind CSS', 'shadcn/ui'];
+const STACK = ['NestJS', 'Next.js', 'PostgreSQL', 'Prisma', 'Redis', 'BullMQ', 'Stripe', 'OpenTelemetry', 'Docker', 'Turborepo', 'Tailwind CSS', 'shadcn/ui'];
 
 const glass = 'border border-white/70 bg-card/60 shadow-xl shadow-primary/5 backdrop-blur-xl dark:border-white/10 dark:bg-card/50';
 
 export default async function LandingPage() {
   const t = await getT();
   return (
-    <div className="relative isolate overflow-hidden">
+    <div className="smooth-anchors relative isolate overflow-hidden">
       <Backdrop />
       <a
         href="#main"

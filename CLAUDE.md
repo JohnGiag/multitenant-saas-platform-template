@@ -62,7 +62,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - Only `SuperAdmin` may operate across tenants, and only through explicit, audited code paths.
 - **`SuperAdmin` manages tenants and their users, nothing inside them.** It never gets a tenant's integrations (BYOK secrets), messaging or other business data, not even via `X-Tenant-Id`: leave `SuperAdmin` out of `@Roles` on such routes. Its own account routes (`/auth/me`, its own stream and devices) are fine.
 - Every new tenant-scoped repository needs a test proving that tenant A cannot read or write tenant B's data.
-- **Deleting a tenant erases everything it owns.** Core tables are deleted in `PrismaTenantRepository.delete`. Data kept elsewhere (files in a bucket, queued jobs) is erased by a hook registered in `TenantDeletionHooks` (`modules/tenancy`). Hooks run before the rows are deleted and must be safe to run twice. An optional module's table uses `onDelete: Cascade` on its tenant relation, so core never names it.
+- **Deleting a tenant erases everything it owns.** Core tables are deleted in `PrismaTenantRepository.delete`. Data kept elsewhere (files in a bucket, queued jobs) is erased by a hook registered in `TenantDeletionHooks` (`modules/tenancy`). Hooks run before the rows are deleted and must be safe to run twice. An optional module's table uses `onDelete: Cascade` on its tenant relation, so core never names it. The one exception: a deleted tenant's id stays in exported traces until the telemetry backend's retention expires it (an opaque id, nothing else about the tenant).
 
 ## Auth & security
 
@@ -100,6 +100,14 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 
 - Report what happened in a tenant with `TenantEvents.publish(tenantId, type, data)` (`modules/events`), after the change commits. Payloads leave the platform: ids and roles only, never emails, names or secrets. A module publishing its own types declares them with `TenantEvents.declare`.
 - The optional `webhooks` module delivers them to the tenant's endpoints (Standard Webhooks signatures, its own retry schedule). **Every outgoing request to a tenant-chosen URL goes through `postWebhook`** (`optional/webhooks/infrastructure/https-delivery.ts`), which refuses non-public addresses at connection time (SSRF). Never call a tenant-chosen URL with plain `fetch`.
+
+## Observability
+
+- OpenTelemetry, off unless `dist/telemetry.js` is preloaded (`start:otel`, or `NODE_OPTIONS` in production). The app never imports that file, and needs nothing else to switch on: use `@opentelemetry/api` directly, which does nothing without it. Backends are chosen with standard `OTEL_*` variables, so never add a vendor SDK or a vendor-specific exporter.
+- **Allowlists, not blocklists.** A span attribute leaves only if it is in `EXPORTED_SPAN_ATTRIBUTES` (`infrastructure/telemetry/span-scrubber.ts`). Every trace exporter goes through `ScrubbingSpanExporter`. Exceptions keep only their type.
+- **Telemetry follows the logging rule:** ids and route patterns, never secrets, tokens, raw URLs, IP addresses, user agents, emails or names. `test/telemetry.e2e.test.mjs` proves it against the real server.
+- **Metric labels stay bounded:** never a tenant, user, raw URL or tenant-chosen host, because each value adds a time series. `tenant.id` belongs on spans only.
+- Log messages are exported as written, so never put a client IP or PII in one.
 
 ## Notifications
 

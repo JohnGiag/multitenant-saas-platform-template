@@ -42,6 +42,7 @@ Tenants, sign-in, roles, API keys, encrypted per-tenant secrets, rate limits, ba
 | **Audit log** | Every successful write is recorded with its actor and target, and can be filtered by actor, target and time. |
 | **Feature flags** | Each module declares its flags and the lowest tier that gets them; a `SuperAdmin` can override them per tenant. Checked with `@RequireFeature` on routes and `FeatureFlags` in workers. |
 | **Plug-and-play modules** | Optional modules (email, push, storage) are folders: delete one and everything still compiles. |
+| **Observability** | Optional OpenTelemetry traces, metrics and logs, to any OTLP backend. An allowlist keeps secrets, IP addresses and raw URLs out, and a local Grafana stack is one command away. |
 | **Deployable** | Docker images for the API (plus a migration job) and the dashboard, with liveness and readiness probes. |
 | **Accessible dashboard** | Next.js App Router with shadcn/ui and Radix. Tested with Playwright, with axe on every page. |
 
@@ -419,6 +420,44 @@ A route without `@ApiDoc` stops the document from building, and a test checks th
   - **On failure,** the Playwright report with traces is attached to the run for 7 days.
   - **Not in CI:** Clerk mode and real emails. Without `STORAGE_*`, the Files page's accessibility check is skipped.
 
+## Observability
+
+Optional traces, metrics and logs through [OpenTelemetry](https://opentelemetry.io). It belongs to the platform, not to tenants: there are no dashboard settings, and tenants never see it. Off by default: without the preload below, nothing is loaded and nothing is sent.
+
+**Locally:**
+
+```sh
+docker compose -f docker-compose.observability.yml up -d
+pnpm build
+pnpm --filter @repo/api start:otel
+```
+
+Grafana is at <http://localhost:3002> (`admin` / `admin`, so it binds to localhost only), with an **API overview** dashboard: requests, errors, slowest routes, rate limiting, queues and dead-letter queues. The stack is one development container (`grafana/otel-lgtm`) and is not for production.
+
+**In production,** run the same image with these variables. Nothing is rebuilt:
+
+```sh
+NODE_OPTIONS=--experimental-loader=@opentelemetry/instrumentation/hook.mjs --import=./dist/telemetry.js
+OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-otlp-endpoint>
+OTEL_EXPORTER_OTLP_HEADERS=<your backend's auth header>
+```
+
+Any OTLP backend works: a hosted one (Grafana Cloud, Datadog and others), or your own Prometheus, Tempo, Loki and Grafana. Treat the auth header as a secret, and keep Grafana private: it shows every tenant's traffic.
+
+**What is sent:**
+
+| Signal | Contents |
+|---|---|
+| Traces | Requests by route pattern, database and Redis calls, outgoing HTTP and queue jobs, in one trace from the request to its job. Tagged with `tenant.id`. |
+| Metrics | Request rate, errors and latency by route, queue depth per state (`jobs.depth`, dead-letter queues included), `rate_limit.rejected`, and Node runtime. |
+| Logs | Every `Logger` message, with the trace of its request. Stack traces stay on the console. |
+
+- **An allowlist decides what leaves** (`EXPORTED_SPAN_ATTRIBUTES`), so attributes added by a future library version stay home. Query strings, raw URLs, SQL text, IP addresses, user agents and error messages are never exported. Add a custom span's attributes to that list.
+- **Using only part of it:** set `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` or `OTEL_LOGS_EXPORTER` to `none`, or send one signal elsewhere with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (and `_METRICS_`, `_LOGS_`), which takes the full URL, such as `https://…/v1/traces`.
+- **Not traced:** health probes (noise) and the SSE stream (one span would last hours).
+- **Cost and volume:** every trace is kept by default. On busy deployments set a sampling rate with `OTEL_TRACES_SAMPLER=parentbased_traceidratio` and `OTEL_TRACES_SAMPLER_ARG=0.1`.
+- **Privacy:** telemetry adds no cookies, so it needs no consent banner. A hosted backend is a data processor, and needs a data processing agreement and a line in your privacy policy. Set a retention period: a deleted tenant's id stays in traces until it expires.
+
 ## Security and compliance
 
 Built towards ISO 27001 (access control, encryption, audit logs), ISO 27701 (minimal, tenant-scoped personal data) and ISO 42001 (AI features must record model, input, output and actor).
@@ -462,6 +501,7 @@ Liveness checks no dependency on purpose: a Postgres or Redis outage should take
 - [ ] Clerk mode: sign-up Restricted, and no organization creation or deletion by users.
 - [ ] Point your orchestrator's liveness probes at `/v1/health` (API) and `/health` (dashboard), and readiness at `/v1/health/ready`.
 - [ ] Billing: live Stripe keys and prices, the webhook endpoint registered for the production API, and the Customer Portal set to cancel at the end of the period.
+- [ ] Observability, if used: a production OTLP backend (not `grafana/otel-lgtm`), its auth header in your secret manager, Grafana on a private network, a retention period, and a sampling rate for busy deployments.
 - [ ] Make the `ci` check required for `main` (GitHub → Settings → Branches).
 
 ## Project structure

@@ -1,10 +1,13 @@
 import { WorkerHost } from '@nestjs/bullmq';
 import { Logger, type BeforeApplicationShutdown, type OnApplicationBootstrap } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { metrics, type ObservableResult } from '@opentelemetry/api';
 import type { Job, Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { TenantDeletionHooks } from '../tenancy/domain/tenant-deletion-hooks.js';
 import { jobConfig } from './job-config.js';
+
+const depth = metrics.getMeter('jobs').createObservableGauge('jobs.depth', { description: 'Jobs per queue and state, dead-letter queues included' });
 
 // What lands in a DLQ: enough to diagnose the failure and replay the original payload.
 export interface DeadLetterRecord<T> {
@@ -67,6 +70,7 @@ export abstract class DeadLetteringWorker<T extends { tenantId: string }>
   // into a forced one. So decide first: force only when Redis does not answer; the interrupted jobs
   // are then picked up again as stalled once Redis is back.
   async beforeApplicationShutdown(): Promise<void> {
+    depth.removeCallback(this.observeDepth);
     const reachable = await this.redis.ping().then(
       () => true,
       () => false,
@@ -80,11 +84,21 @@ export abstract class DeadLetteringWorker<T extends { tenantId: string }>
     this.worker.concurrency = jobConfig(this.config).concurrency;
     // Registered directly rather than with @OnWorkerEvent, which subclasses would have to repeat.
     this.worker.on('failed', (job, error) => void this.onFailed(job, error));
+    depth.addCallback(this.observeDepth);
     // In the background: the API should not wait for a long failed list to drain.
     void this.deadLetterLeftovers().catch((err: unknown) =>
       this.logger.error(`Failed-set sweep aborted: ${err instanceof Error ? err.message : String(err)}`),
     );
   }
+
+  // Queue commands wait out a Redis outage instead of failing, so collecting during one would only pile them up.
+  private readonly observeDepth = async (result: ObservableResult): Promise<void> => {
+    if (this.redis.status !== 'ready') return;
+    for (const queue of [this.sourceQueue, this.dlq]) {
+      const counts = await queue.getJobCounts('waiting', 'delayed', 'active', 'failed');
+      for (const [state, count] of Object.entries(counts)) result.observe(count, { queue: queue.name, state });
+    }
+  };
 
   // Routes jobs that failed for good but never reached the DLQ: the DLQ write failed (Redis blip),
   // the process died between write and remove, or the job failed during shutdown. Safe on every
