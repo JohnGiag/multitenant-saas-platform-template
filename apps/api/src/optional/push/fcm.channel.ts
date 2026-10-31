@@ -1,6 +1,7 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { importPKCS8, SignJWT } from 'jose';
 import { z } from 'zod';
+import { isRetryableStatus } from '../../infrastructure/email/resend.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import {
   NotificationChannelRegistry,
@@ -114,6 +115,6 @@ function parseServiceAccount(raw: string | undefined): ServiceAccount {
 // Rate limited or down: retry with backoff. Anything else (revoked key, wrong project): won't heal.
 function throwForStatus(service: string, status: number, body: string): never {
   const detail = `${service} answered ${status}: ${body.slice(0, 300)}`;
-  if (status === 429 || status >= 500) throw new Error(detail);
+  if (isRetryableStatus(status)) throw new Error(detail);
   throw new PermanentDeliveryError(detail);
 }

@@ -4,8 +4,12 @@ import type { ConfigService } from '@nestjs/config';
 import { metrics, type ObservableResult } from '@opentelemetry/api';
 import type { Job, Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
+import { withTimeout } from '../../common/with-timeout.js';
 import { TenantDeletionHooks } from '../tenancy/domain/tenant-deletion-hooks.js';
 import { jobConfig } from './job-config.js';
+
+// Reads whole queues, so far longer than a queue call on a request: failing here leaves the tenant for a retry.
+const TENANT_SWEEP_TIMEOUT_MS = 30_000;
 
 const depth = metrics.getMeter('jobs').createObservableGauge('jobs.depth', { description: 'Jobs per queue and state, dead-letter queues included' });
 
@@ -53,6 +57,10 @@ export abstract class DeadLetteringWorker<T extends { tenantId: string }>
   // shortcut: loads every pending and dead-lettered job to filter by tenant; fine for a rare deletion,
   // index jobs by tenant if queues hold millions.
   async forgetTenant(tenantId: string): Promise<void> {
+    await withTimeout(this.dropJobsOf(tenantId), TENANT_SWEEP_TIMEOUT_MS, `Dropping the jobs of tenant ${tenantId}`);
+  }
+
+  private async dropJobsOf(tenantId: string): Promise<void> {
     const pending = await this.sourceQueue.getJobs(['wait', 'delayed', 'prioritized', 'failed']);
     const dead = await this.dlq.getJobs(['wait']);
     await Promise.all([

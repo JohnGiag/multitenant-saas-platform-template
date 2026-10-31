@@ -42,7 +42,7 @@ test('lists installed optional modules, enabled per tenant configuration', async
     { key: 'webhooks', integration: null, enabled: true },
   ]);
 
-  await call('PUT', '/integrations/r2', { token: tokens.adminA, body: { config: { accessKeyId: 'x' } } });
+  assert.equal((await call('PUT', '/integrations/r2', { token: tokens.adminA, body: { config: { accessKeyId: 'x' } } })).status, 200);
   assert.equal(await storageEnabled(tokens.userA), true);
   // Tenant B has not configured r2.
   assert.equal(await storageEnabled(tokens.adminB), false);

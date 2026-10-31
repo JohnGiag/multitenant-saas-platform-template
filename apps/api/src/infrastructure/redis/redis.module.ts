@@ -1,4 +1,4 @@
-import { Global, Inject, Logger, Module, type OnApplicationShutdown } from '@nestjs/common';
+import { Global, Inject, Logger, Module, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis, type RedisOptions } from 'ioredis';
 import { redisConnection } from './redis-connection.js';
@@ -23,7 +23,7 @@ const logger = new Logger('Redis');
           commandTimeout: 500,
           // Give up on an unreachable host after 1 s (default 10 s), e.g. a primary that just died.
           connectTimeout: 1000,
-          // Connect on the first command: startup never waits on Redis, and an app that fails to boot holds no socket.
+          // Connected once the app has booted (below): an app that fails to boot holds no socket.
           lazyConnect: true,
         };
         const connection = redisConnection(config);
@@ -38,8 +38,14 @@ const logger = new Logger('Redis');
   ],
   exports: [REDIS_CLIENT],
 })
-export class RedisModule implements OnApplicationShutdown {
+export class RedisModule implements OnApplicationBootstrap, OnApplicationShutdown {
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
+
+  // Before the first request: commandTimeout also counts time spent connecting, so a command that had to open the
+  // connection could time out, and a public route answers 503 for it. Unreachable: ioredis keeps retrying by itself.
+  async onApplicationBootstrap(): Promise<void> {
+    await this.redis.connect().catch(() => undefined);
+  }
 
   async onApplicationShutdown(): Promise<void> {
     // QUIT fails while Redis is unreachable; drop the socket instead of failing the shutdown.

@@ -13,6 +13,7 @@ import {
 } from '@repo/shared-types';
 import { jwtVerify, SignJWT } from 'jose';
 import { z } from 'zod';
+import type { Prisma } from '../../../generated/prisma/client.js';
 import type { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { MAX_ACCOUNTS_PER_EMAIL } from '../domain/account-lookup.js';
 import type { AccessRevocations } from '../domain/ports/access-revocations.port.js';
@@ -88,10 +89,16 @@ export class LocalAuthAdapter implements AuthService {
     const now = new Date();
     // Sessions left to expire are cleared here, so the table holds only live ones plus what a user left behind.
     await this.prisma.authSession.deleteMany({ where: { tenantId: user.tenantId, userId: user.id, expiresAt: { lte: now } } });
-    const session = await this.prisma.authSession.create({
-      data: { tenantId: user.tenantId, userId: user.id, expiresAt: refreshExpiry(now) },
-      select: { id: true },
-    });
+    // A public route, so AuditInterceptor does not see it; recorded in the same commit as the session.
+    const [session] = await this.prisma.$transaction([
+      this.prisma.authSession.create({
+        data: { tenantId: user.tenantId, userId: user.id, expiresAt: refreshExpiry(now) },
+        select: { id: true },
+      }),
+      this.prisma.auditLog.create({
+        data: { tenantId: user.tenantId, actorKind: 'user', actorId: user.id, actorRole: user.role, method: 'POST', route: '/v1/auth/login', status: 200 },
+      }),
+    ]);
     return this.issue({ userId: user.id, tenantId: user.tenantId, sessionId: session.id, generation: 0, role: user.role, tier: user.tenant.tier });
   }
 
@@ -109,7 +116,20 @@ export class LocalAuthAdapter implements AuthService {
     const decision = decideRefresh(session, claims.generation, now);
     if (decision === 'reuse') {
       this.logger.warn(`Refresh token replayed for session ${claims.sessionId} of tenant ${claims.tenantId}: session ended`);
-      await this.endSession(claims.tenantId, claims.sessionId);
+      await this.endSession(claims.tenantId, claims.sessionId, [
+        this.prisma.auditLog.create({
+          data: {
+            tenantId: claims.tenantId,
+            actorKind: 'user',
+            actorId: session.userId,
+            actorRole: session.user.role,
+            method: 'POST',
+            route: '/v1/auth/refresh',
+            targetId: claims.sessionId,
+            status: 401,
+          },
+        }),
+      ]);
       return null;
     }
     if (decision === 'rotate') {
@@ -148,8 +168,9 @@ export class LocalAuthAdapter implements AuthService {
     }
   }
 
-  private async endSession(tenantId: string, sessionId: string): Promise<void> {
-    await this.prisma.authSession.deleteMany({ where: { id: sessionId, tenantId } });
+  // `alongside`: writes that must commit with the session's end.
+  private async endSession(tenantId: string, sessionId: string, alongside: Prisma.PrismaPromise<unknown>[] = []): Promise<void> {
+    await this.prisma.$transaction([this.prisma.authSession.deleteMany({ where: { id: sessionId, tenantId } }), ...alongside]);
     await this.revocations.revoke('session', sessionId);
   }
 

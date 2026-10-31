@@ -91,6 +91,15 @@ test("login is limited per account and IP, so a stranger's guesses cannot lock t
   assert.equal((await loginAs('b@example.com', PASSWORD, stranger)).status, 200);
 });
 
+test('changing address within an IPv6 /64 does not get around the per-account limit', async () => {
+  const block = `2001:db8:${Math.floor(Math.random() * 0xffff).toString(16)}:1::`;
+  for (let i = 1; i <= LOGIN_ACCOUNT_LIMIT; i++) {
+    assert.equal((await loginAs('admin@example.com', 'wrong', `${block}${i.toString(16)}`)).status, 401);
+  }
+  assert.equal((await loginAs('admin@example.com', 'wrong', `${block}ffff`)).status, 429);
+  assert.equal((await loginAs('admin@example.com', PASSWORD, randomIp())).status, 200, 'the owner is not locked out');
+});
+
 test('login is limited per account across IPs at a higher ceiling, even with the right password', async () => {
   for (let i = 0; i < LOGIN_CEILING_LIMIT; i++) assert.equal((await loginAs('e@example.com', 'wrong', randomIp())).status, 401);
   assert.equal((await loginAs('e@example.com', PASSWORD, randomIp())).status, 429);

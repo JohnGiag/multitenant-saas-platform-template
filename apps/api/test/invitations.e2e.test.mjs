@@ -158,6 +158,13 @@ test('when the email fails, no invitation is left behind', async () => {
   const res = await invite(tokens.adminA, { email: 'unlucky@example.com' });
   assert.equal(res.status, 502);
   assert.equal(await db.invitation.count({ where: { email: 'unlucky@example.com' } }), 0);
+
+  // A timeout or a network failure answers the same.
+  respond = () => {
+    throw new TypeError('fetch failed');
+  };
+  assert.equal((await invite(tokens.adminA, { email: 'unlucky@example.com' })).status, 502);
+  assert.equal(await db.invitation.count({ where: { email: 'unlucky@example.com' } }), 0);
 });
 
 test('without any email credentials, invitations are refused and nothing is kept', async () => {
@@ -192,10 +199,10 @@ test('password reset: the user gets a link and chooses a new password', async ()
   assert.equal(await login(tenants.a, email), 401);
   assert.equal(typeof (await login(tenants.a, email, NEW_PASSWORD)), 'string');
   assert.equal((await confirmReset(tokenIn(sent))).status, 400, 'single use');
-  // Audited once, by the user whose password changed; the refused second use is not.
+  // Audited once, by the user whose password changed, then their sign-in; the refused second use is not.
   const { id: userId } = await db.user.findFirstOrThrow({ where: { tenantId: tenants.a, email } });
-  const rows = await db.auditLog.findMany({ where: { tenantId: tenants.a, actorId: userId } });
-  assert.deepEqual(rows.map((r) => `${r.method} ${r.route} ${r.status}`), ['POST /v1/auth/password-reset/confirm 204']);
+  const rows = await db.auditLog.findMany({ where: { tenantId: tenants.a, actorId: userId }, orderBy: { id: 'asc' } });
+  assert.deepEqual(rows.map((r) => `${r.method} ${r.route} ${r.status}`), ['POST /v1/auth/password-reset/confirm 204', 'POST /v1/auth/login 200']);
 });
 
 test('password reset reveals nothing about unknown accounts', async () => {

@@ -4,6 +4,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { after, before, beforeEach, test } from 'node:test';
 import { importSPKI, jwtVerify } from 'jose';
+import { MAX_DEVICES_PER_USER } from '../dist/optional/push/push-devices.controller.js';
 import { cleanup, db, seedTenant, startApp, testQueue, waitFor } from './helpers.mjs';
 
 // Fast retries so the dead-letter tests take milliseconds.
@@ -188,8 +189,8 @@ test('dead FCM device tokens are forgotten without failing the job', async () =>
       : succeed(c);
   const dlqBefore = await dlq.count();
   await notifyAlice();
-  await waitFor(async () => (await db.pushDevice.count({ where: { token: 'device-dead' } })) === 0);
-  assert.equal(await db.pushDevice.count({ where: { token: 'device-alice' } }), 1);
+  await waitFor(async () => (await db.pushDevice.count({ where: { tenantId: tenants.a, token: 'device-dead' } })) === 0);
+  assert.equal(await db.pushDevice.count({ where: { tenantId: tenants.a, token: 'device-alice' } }), 1);
   await sleep(200);
   assert.equal(await dlq.count(), dlqBefore);
 });
@@ -208,7 +209,7 @@ test('a 400 about the message keeps every device; a 400 about the token drops on
       : succeed(c);
   await notifyAlice();
   await waitFor(async () => (await dlq.count()) === dlqBefore + 1);
-  assert.equal(await db.pushDevice.count({ where: { token: 'device-alice' } }), 1);
+  assert.equal(await db.pushDevice.count({ where: { tenantId: tenants.a, token: 'device-alice' } }), 1);
 
   // Token problem: only that device goes.
   await call('POST', '/push/devices', { token: tokens.alice, body: { token: 'device-bad-token' } });
@@ -217,8 +218,8 @@ test('a 400 about the message keeps every device; a 400 about the token drops on
       ? fcmError('The registration token is not a valid FCM registration token')
       : succeed(c);
   await notifyAlice();
-  await waitFor(async () => (await db.pushDevice.count({ where: { token: 'device-bad-token' } })) === 0);
-  assert.equal(await db.pushDevice.count({ where: { token: 'device-alice' } }), 1);
+  await waitFor(async () => (await db.pushDevice.count({ where: { tenantId: tenants.a, token: 'device-bad-token' } })) === 0);
+  assert.equal(await db.pushDevice.count({ where: { tenantId: tenants.a, token: 'device-alice' } }), 1);
 });
 
 test('data that FCM would reject is refused at the API', async () => {
@@ -232,6 +233,28 @@ test('push devices: users only, removable by their owner', async () => {
   await call('POST', '/push/devices', { token: tokens.alice, body: { token: 'device-temp' } });
   assert.equal((await call('DELETE', '/push/devices/device-temp', { token: tokens.alice })).status, 204);
   assert.equal(await db.pushDevice.count({ where: { token: 'device-temp' } }), 0);
+});
+
+test('push devices: another tenant registering the same token leaves this tenant’s row alone', async () => {
+  await call('POST', '/push/devices', { token: tokens.alice, body: { token: 'device-shared' } });
+  assert.equal((await call('POST', '/push/devices', { token: tokens.adminB, body: { token: 'device-shared' } })).status, 204);
+  const rows = await db.pushDevice.findMany({ where: { token: 'device-shared' } });
+  assert.deepEqual(rows.map((r) => r.tenantId).sort(), [tenants.a, tenants.b].sort());
+  assert.equal((await call('DELETE', '/push/devices/device-shared', { token: tokens.adminB })).status, 204);
+  assert.equal((await db.pushDevice.findFirstOrThrow({ where: { token: 'device-shared' } })).tenantId, tenants.a);
+  await db.pushDevice.deleteMany({ where: { tenantId: tenants.a, token: 'device-shared' } });
+});
+
+test('push devices: past the cap the oldest goes, and a device registered again counts as new', async () => {
+  const userId = (await db.user.findFirstOrThrow({ where: { tenantId: tenants.b, email: 'admin@example.com' } })).id;
+  const register = (name) => call('POST', '/push/devices', { token: tokens.adminB, body: { token: name } });
+  for (let i = 0; i < MAX_DEVICES_PER_USER; i++) assert.equal((await register(`cap-${i}`)).status, 204);
+  await register('cap-0');
+  await register('cap-new');
+  const tokensLeft = (await db.pushDevice.findMany({ where: { tenantId: tenants.b, userId } })).map((d) => d.token);
+  assert.equal(tokensLeft.length, MAX_DEVICES_PER_USER);
+  assert.ok(tokensLeft.includes('cap-0') && tokensLeft.includes('cap-new'));
+  assert.ok(!tokensLeft.includes('cap-1'));
 });
 
 async function finished(job) {

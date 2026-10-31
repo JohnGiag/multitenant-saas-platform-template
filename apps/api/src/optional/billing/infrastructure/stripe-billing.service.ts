@@ -4,8 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import type { BillingStatus, PaidTier } from '@repo/shared-types';
 import type { Queue } from 'bullmq';
 import { hasCode } from '../../../common/prisma-errors.js';
+import { withTimeout } from '../../../common/with-timeout.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { TenantEvents } from '../../../modules/events/domain/tenant-events.js';
+import { QUEUE_TIMEOUT_MS } from '../../../modules/jobs/job-config.js';
 import { TenantDeletionHooks } from '../../../modules/tenancy/domain/tenant-deletion-hooks.js';
 import {
   BillingConflictError,
@@ -26,6 +28,11 @@ export interface PeriodEndJob {
 
 // One job per tenant and cancellation time, so a webhook delivered twice schedules it once.
 export const periodEndJobId = (tenantId: string, cancelAt: Date) => `period-end-${tenantId}-${cancelAt.getTime()}`;
+
+// Already gone in Stripe is what was asked for. Anything else is rethrown, so the caller retries rather than leaves it charging.
+function unlessGone(error: unknown): void {
+  if (!(error instanceof StripeApiError && (error.status === 404 || error.code === 'resource_missing'))) throw error;
+}
 
 @Injectable()
 export class StripeBillingService implements BillingService {
@@ -117,7 +124,9 @@ export class StripeBillingService implements BillingService {
       this.logger.warn(`Subscription ${subscription.id} ignored: it carries no tenantId (not created by our checkout)`);
       return;
     }
-    const prices = this.configured().billing.prices;
+    const { billing, stripe } = this.configured();
+    const { prices } = billing;
+    let stray = false;
     const previous = await this.prisma.$transaction(async (tx) => {
       // Locked, so two deliveries for one tenant (Stripe sends several events per change) apply one after the other.
       await tx.$queryRaw`SELECT id FROM billing_accounts WHERE tenant_id = ${tenantId}::uuid FOR UPDATE`;
@@ -130,8 +139,10 @@ export class StripeBillingService implements BillingService {
       const stored = { subscriptionId: account.stripeSubscriptionId, status: account.status, lastEventAt: account.lastEventAt };
       const decision = decideEvent(stored, subscription, createdAt);
       if (decision === 'other_subscription') {
-        // Two checkouts in parallel, or one made in the Stripe Dashboard: the customer pays for both.
-        this.logger.error(`Tenant ${tenantId} has a second subscription ${subscription.id}, ignored: cancel one of them in Stripe`);
+        // Two Checkout pages both paid, or one made in the Stripe Dashboard. The tier follows only the stored one, so
+        // a live second one would just charge the customer again. Late events of an ended one need nothing.
+        stray = !hasEnded(subscription.status);
+        if (stray) this.logger.error(`Tenant ${tenantId} paid for a second subscription ${subscription.id}: cancelled, refund it in Stripe`);
       }
       if (decision !== 'apply') return null;
       await tx.billingAccount.update({
@@ -149,6 +160,8 @@ export class StripeBillingService implements BillingService {
       const after = await tx.tenant.update({ where: { id: tenantId }, data: { tier: tierOf(subscription, prices) }, select: { tier: true } });
       return { account, previousTier: before.tier, tier: after.tier };
     });
+    // After the commit, and safe to repeat: a failure answers Stripe 500, and its retry lands here again.
+    if (stray) await stripe.cancelSubscription(subscription.id).catch(unlessGone);
     if (!previous) return;
     await this.schedulePeriodEnd(tenantId, previous.account.cancelAt, subscription, prices);
     if (previous.tier !== previous.previousTier) {
@@ -183,32 +196,23 @@ export class StripeBillingService implements BillingService {
     const { cancelAt } = subscription;
     if (previousCancelAt && previousCancelAt.getTime() !== cancelAt?.getTime()) {
       // Reactivated or rescheduled. A job already running re-checks the account, so a failed removal is harmless.
-      await this.queue.remove(periodEndJobId(tenantId, previousCancelAt)).catch(() => undefined);
+      await withTimeout(this.queue.remove(periodEndJobId(tenantId, previousCancelAt)), QUEUE_TIMEOUT_MS, 'Removing a job').catch(() => undefined);
     }
     if (!cancelAt || tierOf(subscription, prices) === 'free') return;
-    await this.queue.add(
-      'period-end',
-      { tenantId },
-      { jobId: periodEndJobId(tenantId, cancelAt), delay: Math.max(0, cancelAt.getTime() - Date.now()) },
-    );
+    const delay = Math.max(0, cancelAt.getTime() - Date.now());
+    await withTimeout(this.queue.add('period-end', { tenantId }, { jobId: periodEndJobId(tenantId, cancelAt), delay }), QUEUE_TIMEOUT_MS, 'Queueing a job');
   }
 
-  // Tenant deleted: stop charging it. Its pending jobs go with the queue's own deletion hook (DeadLetteringWorker).
+  // Tenant deleted: its customer goes, which also ends every subscription, a stray second one included. A failure
+  // aborts the deletion for a retry. Its pending jobs go with the queue's own deletion hook (DeadLetteringWorker).
   private async forgetTenant(tenantId: string): Promise<void> {
-    const account = await this.prisma.billingAccount.findUnique({ where: { tenantId } });
-    if (!account?.stripeSubscriptionId || hasEnded(account.status)) return;
+    const account = await this.prisma.billingAccount.findUnique({ where: { tenantId }, select: { stripeCustomerId: true } });
+    if (!account) return;
     if (!this.stripe) {
-      this.logger.warn(`Tenant ${tenantId} has Stripe subscription ${account.stripeSubscriptionId} but STRIPE_* is unset: cancel it in Stripe`);
+      this.logger.warn(`Tenant ${tenantId} has Stripe customer ${account.stripeCustomerId} but STRIPE_* is unset: delete it in Stripe`);
       return;
     }
-    try {
-      await this.stripe.cancelSubscription(account.stripeSubscriptionId);
-    } catch (error) {
-      // Already gone in Stripe. Anything else aborts the deletion, so it is retried rather than left charging.
-      if (!(error instanceof StripeApiError && (error.status === 404 || error.code === 'resource_missing'))) throw error;
-    }
-    // Recorded, so a retried deletion does not cancel twice.
-    await this.prisma.billingAccount.update({ where: { id: account.id }, data: { status: 'canceled' } });
+    await this.stripe.deleteCustomer(account.stripeCustomerId).catch(unlessGone);
   }
 
   private async createCustomer(tenantId: string, stripe: StripeApi): Promise<string> {

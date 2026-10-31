@@ -18,6 +18,7 @@ import {
 } from '@repo/shared-types';
 import { Observable } from 'rxjs';
 import { ApiDoc } from '../../../common/api-doc.js';
+import { unavailableOnTimeout } from '../../../common/unavailable-on-timeout.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { CurrentPrincipal, Roles } from '../../auth/presentation/decorators.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
@@ -39,7 +40,7 @@ export class NotificationsController {
     @TenantId() tenantId: string,
     @Body(new ZodValidationPipe(SendNotificationSchema)) body: SendNotificationDto,
   ): Promise<SendNotificationResult> {
-    const result = await this.notifications.send(tenantId, body);
+    const result = await this.notifications.send(tenantId, body).catch(unavailableOnTimeout);
     if (!result) throw new NotFoundException('Recipient is not a user of this tenant');
     return result;
   }

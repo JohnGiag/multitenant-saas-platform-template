@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { EmailSchema, IdSchema, RoleSchema, TimestampSchema } from './common.js';
-import { pageQuery } from './pagination.js';
+import { cursorPage, pageQuery } from './pagination.js';
 
 // Never carries passwordHash: this is the shape that leaves the API.
 export const UserSchema = z.object({
@@ -31,3 +31,10 @@ export type ChangePasswordDto = z.infer<typeof ChangePasswordSchema>;
 
 export const UserPageQuerySchema = pageQuery(IdSchema);
 export type UserPageQuery = z.infer<typeof UserPageQuerySchema>;
+
+export const UserSessionSchema = z.object({ id: IdSchema, createdAt: TimestampSchema, expiresAt: TimestampSchema });
+export type UserSession = z.infer<typeof UserSessionSchema>;
+
+// What the core tables hold about one person (ISO 27701). Their actions are in GET /v1/audit-logs?actorId=<id>.
+export const UserExportSchema = z.object({ user: UserSchema, sessions: cursorPage(UserSessionSchema) });
+export type UserExport = z.infer<typeof UserExportSchema>;

@@ -24,6 +24,9 @@ const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const membershipId = (orgId: string, userId: string) => `${orgId}/${userId}`;
 
+// Rows whose name or email came from an event older than `at`, or from none.
+const olderThan = (at: Date) => ({ OR: [{ clerkEventAt: null }, { clerkEventAt: { lt: at } }] });
+
 // Mirrors Clerk into our tenants and users (Clerk is where they are created and removed).
 // Every event is idempotent and order-independent: Svix retries deliveries, late and in any order.
 // Deletions leave a tombstone (ClerkDeletion), so a create or update older than it changes nothing.
@@ -57,7 +60,7 @@ export class ClerkWebhookHandler {
         return this.removeMembers({ clerkUserId: public_user_data.user_id, tenant: { clerkOrgId: organization.id }, createdAt: { lt: at } });
       }
       case 'user.updated':
-        return this.updateEmail(ClerkUserSchema.parse(data));
+        return this.updateEmail(ClerkUserSchema.parse(data), at);
       case 'user.deleted': {
         const { id } = DeletedSchema.parse(data);
         await this.tombstone(id, at);
@@ -72,12 +75,14 @@ export class ClerkWebhookHandler {
   // Null when the organization was deleted after this event.
   private async upsertTenant({ id, name }: z.infer<typeof OrganizationSchema>, at: Date) {
     if (await this.deletedSince(at, id)) return null;
-    return this.prisma.tenant.upsert({
+    const tenant = await this.prisma.tenant.upsert({
       where: { clerkOrgId: id },
-      create: { clerkOrgId: id, name },
-      update: { name },
+      create: { clerkOrgId: id, name, clerkEventAt: at },
+      update: {},
       select: { id: true },
     });
+    await this.prisma.tenant.updateMany({ where: { id: tenant.id, ...olderThan(at) }, data: { name, clerkEventAt: at } });
+    return tenant;
   }
 
   private async addMember({ role, organization, public_user_data }: z.infer<typeof MembershipSchema>, at: Date) {
@@ -103,7 +108,7 @@ export class ClerkWebhookHandler {
         const startingRole = role === 'org:admin' ? 'TenantAdmin' : 'User';
         // createdAt on Clerk's clock, so organizationMembership.deleted compares like with like.
         const user = await this.prisma.user.create({
-          data: { tenantId: tenant.id, email: email.data, role: startingRole, clerkUserId, createdAt: at },
+          data: { tenantId: tenant.id, email: email.data, role: startingRole, clerkUserId, createdAt: at, clerkEventAt: at },
           select: { id: true },
         });
         await this.events.publish(tenant.id, 'member.joined', { userId: user.id, role: startingRole });
@@ -135,7 +140,7 @@ export class ClerkWebhookHandler {
     }
   }
 
-  private async updateEmail({ id, primary_email_address_id, email_addresses }: z.infer<typeof ClerkUserSchema>) {
+  private async updateEmail({ id, primary_email_address_id, email_addresses }: z.infer<typeof ClerkUserSchema>, at: Date) {
     const primary = email_addresses.find((address) => address.id === primary_email_address_id);
     const email = EmailSchema.safeParse(primary?.email_address);
     if (!email.success) return;
@@ -143,12 +148,11 @@ export class ClerkWebhookHandler {
     const members = await this.prisma.user.findMany({ where: { clerkUserId: id }, select: { id: true } });
     for (const member of members) {
       try {
-        await this.prisma.user.update({ where: { id: member.id }, data: { email: email.data } });
+        await this.prisma.user.updateMany({ where: { id: member.id, ...olderThan(at) }, data: { email: email.data, clerkEventAt: at } });
       } catch (error) {
-        // Another member of that tenant already has the email: keep the old one there. Gone since: nothing to do.
-        if (hasCode(error, 'P2002')) {
-          this.logger.warn(`Email change of Clerk user ${id} skipped in one tenant: the address is taken there`);
-        } else if (!hasCode(error, 'P2025')) throw error;
+        // Another member of that tenant already has the email: keep the old one there.
+        if (!hasCode(error, 'P2002')) throw error;
+        this.logger.warn(`Email change of Clerk user ${id} skipped in one tenant: the address is taken there`);
       }
     }
   }

@@ -64,10 +64,16 @@ test('a renewal keeps the tenant a SuperAdmin has open', async ({ page, context 
 test('the refresh route never redirects to another site', async ({ page }) => {
   await signIn(page, fixtures().emails.admin);
   await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
-  for (const next of ['https://example.com/', '//example.com/', '/\\example.com/']) {
+  for (const next of ['https://example.com/', '//example.com/', '/\\example.com/', '/\t/example.com/']) {
     await page.goto(`/session/refresh?next=${encodeURIComponent(next)}`);
     await expect(page).toHaveURL(/localhost:\d+\/$/);
   }
+});
+
+test('the refresh route redirects relatively, so it works behind a proxy', async ({ request }) => {
+  const res = await request.get('/session/refresh?next=/users', { maxRedirects: 0, headers: { host: 'app.example.com' } });
+  expect(res.status()).toBe(307);
+  expect(res.headers().location).toBe('/login');
 });
 
 test('signed out, / is the landing page, which leads to sign-in', async ({ page }) => {

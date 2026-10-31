@@ -14,11 +14,13 @@ import type {
 } from '@repo/shared-types';
 import type { Queue } from 'bullmq';
 import { toCursorPage } from '../../../common/cursor-page.js';
+import { withTimeout } from '../../../common/with-timeout.js';
 import type { WebhookEndpoint as EndpointRow } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { TenantEvents, type TenantEvent } from '../../../modules/events/domain/tenant-events.js';
 import { FeatureFlags } from '../../../modules/feature-flags/domain/feature-flags.js';
 import { parseMasterKey, sealSecret } from '../../../modules/integrations/domain/secret-box.js';
+import { QUEUE_TIMEOUT_MS } from '../../../modules/jobs/job-config.js';
 import { DELIVERY_ATTEMPTS, endpointUrlProblem } from '../domain/delivery-policy.js';
 import {
   MAX_ENDPOINTS_PER_TENANT,
@@ -156,15 +158,14 @@ export class PrismaWebhookService implements WebhookService, OnModuleInit {
       timestamp: event.occurredAt.toISOString(),
       data: event.data,
     };
-    await this.queue.addBulk(
-      endpointIds.map((endpointId) => ({
-        name: event.type,
-        data: { tenantId: event.tenantId, endpointId, payload },
-        // The webhook's own schedule (WebhooksWorker), not the shared one: about a day of retries. A fixed id per
-        // event and endpoint, so an event queued twice is delivered once.
-        opts: { jobId: `${event.id}-${endpointId}`, attempts: DELIVERY_ATTEMPTS, backoff: { type: 'webhook' } },
-      })),
-    );
+    const jobs = endpointIds.map((endpointId) => ({
+      name: event.type,
+      data: { tenantId: event.tenantId, endpointId, payload },
+      // The webhook's own schedule (WebhooksWorker), not the shared one: about a day of retries. A fixed id per
+      // event and endpoint, so an event queued twice is delivered once.
+      opts: { jobId: `${event.id}-${endpointId}`, attempts: DELIVERY_ATTEMPTS, backoff: { type: 'webhook' } },
+    }));
+    await withTimeout(this.queue.addBulk(jobs), QUEUE_TIMEOUT_MS, 'Queueing a webhook delivery');
   }
 
   private check({ url, events }: { url?: string; events?: string[] }): void {

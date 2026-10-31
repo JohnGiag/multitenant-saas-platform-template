@@ -268,7 +268,7 @@ Every route is limited with a Redis sliding window over the last 60 seconds, wit
 | Sign-in attempts | per email (any tenant), or per account when a `tenantId` is sent: per client IP, and for all IPs together | 10 per 15 minutes per IP (a success resets it); 100 per 15 minutes from all IPs | `503` |
 | Password reset requests | per email: per client IP, and for all IPs together | 10 per 15 minutes per IP; 30 from all IPs | `503` |
 
-Counting per IP first means a stranger's wrong guesses lock out only the stranger's address, never the account's owner; the all-IPs ceiling still stops guessing spread across many addresses. A password reset lifts both.
+Counting per IP first means a stranger's wrong guesses lock out only the stranger's address, not the account's owner; the all-IPs ceiling still stops guessing spread across many addresses, and an attacker with enough addresses can reach it, which also blocks the owner until it clears. A password reset lifts both. An IPv6 client counts as its whole /64, since one connection owns all of those addresses.
 
 **Client IPs.** Behind a load balancer, set `TRUST_PROXY_HOPS` to the number of proxies in front of the API.
 
@@ -276,12 +276,13 @@ Counting per IP first means a stranger's wrong guesses lock out only the strange
 1. Set the same `DASHBOARD_PROXY_SECRET` (32+ characters) in both apps.
 2. In `apps/web`, set `TRUST_PROXY_HOPS` to the number of proxies in front of the dashboard.
 
-The dashboard then forwards each browser's IP (`X-Client-Ip` with `X-Dashboard-Secret`), and the API believes it only when the secret matches. With no proxy in front of the dashboard (`0`), nothing is forwarded, because a browser can write `X-Forwarded-For` itself.
+The dashboard then forwards each browser's IP (`X-Client-Ip` with `X-Dashboard-Secret`), and the API believes it only when the secret matches. With no proxy in front of the dashboard (`0`), nothing is forwarded, because a browser can write `X-Forwarded-For` itself; the dashboard warns about this when it starts in production.
 
 ## Notifications and background jobs
 
 - **Real-time:** `GET /v1/notifications/stream` is a Server-Sent Events stream of the caller's own notifications, fanned out through Redis Pub/Sub so it works across any number of API instances. A user may hold 5 open streams per instance; a 6th closes the oldest with a final `closed` event. Browsers' `EventSource` cannot send an `Authorization` header: use a fetch-based client, or the dashboard's relay at `/notifications/stream`.
 - **Email and push** (optional modules `email` and `push`) are delivered by BullMQ workers, one job per channel. Every API instance runs a worker (`WORKER_CONCURRENCY` jobs at a time). The worker loads the tenant's secrets when the job runs; job payloads never contain them.
+- **Push devices:** a user keeps up to 20; registering another drops their oldest. A token is unique per tenant, so a tenant can never touch another's row.
 - **Missing pieces are skipped, not failed:** a channel whose module is removed, or that the tenant has not configured or has disabled, is skipped.
 - **Retries and the dead-letter queue:** failures are retried with exponential backoff (`JOB_ATTEMPTS`, `JOB_BACKOFF_MS`). Errors a retry cannot fix, such as rejected credentials, skip the retries. Jobs that still fail land in `notifications-dlq` with their payload, error and every attempt's stack trace, ready to inspect and replay.
 
@@ -312,7 +313,8 @@ Optional module `billing`, with Stripe. The platform charges its tenants from it
 - **Failed payments:** the tier holds while Stripe retries the card (`past_due`), and drops when Stripe gives up (`canceled` or `unpaid`). Set the retries in Stripe (Billing → Revenue recovery).
 - **Tiers follow subscriptions.** While billing is on, a `SuperAdmin` cannot set tiers by hand (`409`); renaming tenants still works.
 - **Signed webhooks are not rate limited,** so Stripe's retries after an outage, which arrive in bursts, are never refused. Requests without a valid signature are limited per IP like any public route.
-- **Deleting a tenant cancels its subscription in Stripe first.** If Stripe cannot be reached, the deletion fails and can be retried, rather than leaving the tenant charged.
+- **One subscription per tenant.** If two Checkout pages are both paid, the second subscription is cancelled as soon as its webhook arrives, and an error is logged: refund its charge in Stripe. A subscription you create by hand in the Stripe Dashboard for a tenant that already has one is cancelled the same way.
+- **Deleting a tenant deletes its Stripe customer first,** which ends all its subscriptions at once; Stripe keeps past invoices. If Stripe cannot be reached, the deletion fails and can be retried, rather than leaving the tenant charged.
 
 **Setting it up** (test mode first, no business verification needed):
 1. In the Stripe Dashboard, create a product with a monthly price for Pro and one for Enterprise. Their `price_…` ids go in `STRIPE_PRICE_PRO` and `STRIPE_PRICE_ENTERPRISE`, and the secret key in `STRIPE_SECRET_KEY`.
@@ -334,7 +336,8 @@ Optional module `webhooks`: a tenant's events, delivered to HTTPS endpoints its 
 ## Audit log
 
 - **Every successful write** (`POST`, `PUT`, `PATCH`, `DELETE`) by a signed-in user or API key is recorded: the actor (kind, id, role), the route pattern, the `:id` target, the status and, when a `SuperAdmin` acted on another tenant, which one. Ids only: no request bodies, raw URLs or personal data.
-- **Two public routes are recorded too,** with the user as the actor: accepting an invitation and confirming a password reset. Reads, rejected requests, sign-ins and webhooks are not.
+- **Public routes that change an account are recorded too,** with the user as the actor: a sign-in, accepting an invitation, confirming a password reset, and a replayed refresh token (status `401`, the ended session as the target). Reads, other rejected requests (failed sign-ins included) and webhooks are not.
+- **Exporting a person's records:** a `TenantAdmin` gets a member's profile and sessions from `GET /v1/users/:id/export`, and their actions from `GET /v1/audit-logs?actorId=<id>`.
 - **Rows live in the actor's own tenant,** so a `SuperAdmin`'s actions survive the deletion of the tenant they acted on. A `SuperAdmin` reads only that platform log.
 - **Filter by actor, target and time,** page by page. In the dashboard, every actor or target id links to its filtered view.
 

@@ -2,6 +2,7 @@ import { Controller, Get, Inject, ServiceUnavailableException } from '@nestjs/co
 import { HealthSchema, type Health } from '@repo/shared-types';
 import type { Redis } from 'ioredis';
 import { ApiDoc } from '../../../common/api-doc.js';
+import { withTimeout } from '../../../common/with-timeout.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { REDIS_CLIENT } from '../../../infrastructure/redis/redis.module.js';
 import { Public } from '../../auth/presentation/decorators.js';
@@ -33,14 +34,10 @@ export class HealthController {
   @Get('ready')
   async ready(): Promise<Health> {
     const checks = { database: this.prisma.$queryRaw`SELECT 1`, redis: this.redis.ping() };
-    const results = await Promise.all(Object.values(checks).map((check) => withTimeout(check).then(() => true, () => false)));
+    const results = await Promise.all(Object.values(checks).map((check) => withTimeout(check, CHECK_TIMEOUT_MS, 'A check').then(() => true, () => false)));
     const down = Object.keys(checks).filter((_, i) => !results[i]);
     // Names only: error messages can carry hostnames and connection details.
     if (down.length > 0) throw new ServiceUnavailableException(`Not ready: ${down.join(', ')}`);
     return { status: 'ok' };
   }
-}
-
-function withTimeout(check: Promise<unknown>): Promise<unknown> {
-  return Promise.race([check, new Promise((_, reject) => setTimeout(reject, CHECK_TIMEOUT_MS).unref())]);
 }

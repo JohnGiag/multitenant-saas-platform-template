@@ -12,11 +12,22 @@ import {
   perIp,
   PUBLIC_LIMIT,
   planRateLimit,
+  rateLimitAddress,
   TIER_LIMITS,
 } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
 
 const client = { ip: '10.0.0.1', method: 'GET', route: '/v1/auth/me' };
 const principal = (tier, kind = 'user') => ({ kind, id: 'p1', tenantId: 't1', role: 'User', tier });
+
+test('limits count an IPv6 /64 as one client, however it is written, and IPv4 addresses one by one', () => {
+  const block = '2001:db8:a:b::/64';
+  for (const ip of ['2001:db8:a:b::1', '2001:db8:a:b:1:2:3:4', '2001:0DB8:000A:000B::ffff', '2001:db8:a:b:ffff::', 'fe80::1%eth0'.replace('fe80:', '2001:db8:a:b:')]) {
+    assert.equal(rateLimitAddress(ip), block, ip);
+  }
+  assert.notEqual(rateLimitAddress('2001:db8:a:c::1'), block);
+  assert.equal(rateLimitAddress('::1'), '0:0:0:0::/64');
+  for (const ip of ['203.0.113.9', '::ffff:203.0.113.9', '::ffff:cb00:7109', 'unknown']) assert.equal(rateLimitAddress(ip), ip);
+});
 
 test('authenticated callers: one bucket per tenant and caller, limit by tier, fail open', () => {
   for (const tier of ['free', 'pro', 'enterprise']) {

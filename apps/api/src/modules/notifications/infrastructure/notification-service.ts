@@ -2,8 +2,10 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Notification, SendNotificationResult } from '@repo/shared-types';
 import type { Queue } from 'bullmq';
+import { withTimeout } from '../../../common/with-timeout.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { INTEGRATION_SERVICE, type IntegrationService } from '../../integrations/domain/ports/integration.service.js';
+import { QUEUE_TIMEOUT_MS } from '../../jobs/job-config.js';
 import { NotificationChannelRegistry, type NotificationJob } from '../domain/notification-channel.js';
 import type { NotificationService } from '../domain/ports/notification.service.js';
 import { SseHub } from './sse-hub.js';
@@ -37,7 +39,8 @@ export class QueueingNotificationService implements NotificationService {
     for (const c of channels.filter((c) => !enabled.has(c.integration))) {
       this.logger.debug(`Skipping channel "${c.key}" for tenant ${tenantId}: "${c.integration}" not configured`);
     }
-    await this.queue.addBulk(queued.map((channel) => ({ name: channel, data: { tenantId, channel, notification } })));
+    const jobs = queued.map((channel) => ({ name: channel, data: { tenantId, channel, notification } }));
+    await withTimeout(this.queue.addBulk(jobs), QUEUE_TIMEOUT_MS, 'Queueing a notification');
 
     // Real-time: best effort and not retried, since a user who is not connected misses it anyway.
     const realtime = await this.sse.publish(tenantId, notification).then(

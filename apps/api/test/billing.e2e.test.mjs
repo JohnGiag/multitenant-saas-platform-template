@@ -21,6 +21,7 @@ const stripeCalls = [];
 // Checkout sessions by id, as GET /v1/checkout/sessions/:id answers them (the test decides their state).
 const checkoutSessions = new Map();
 let cancelResponse = () => new Response('{}', { status: 200 });
+let deleteCustomerResponse = () => new Response('{}', { status: 200 });
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = new URL(String(input));
@@ -34,6 +35,7 @@ globalThis.fetch = async (input, init) => {
     authorization: init.headers.authorization,
   };
   stripeCalls.push(call);
+  if (call.method === 'DELETE' && call.path.startsWith('/v1/customers/')) return deleteCustomerResponse();
   if (call.path === '/v1/customers') return Response.json({ id: `cus_${call.idempotencyKey.slice(-12)}` });
   if (call.path === '/v1/checkout/sessions') return Response.json({ url: 'https://checkout.stripe.com/c/pay/cs_test_e2e' });
   if (call.path === '/v1/billing_portal/sessions') return Response.json({ url: 'https://billing.stripe.com/p/session/test_e2e' });
@@ -231,6 +233,28 @@ test('a subscription sets the tier; a late, older event changes nothing; a faile
   assert.equal(await tierOf(tenants.a), 'enterprise');
 });
 
+test('a second subscription paid for by mistake is cancelled in Stripe and changes nothing here', async () => {
+  const customer = await customerOf(tenants.a);
+  const before = await db.billingAccount.findUniqueOrThrow({ where: { tenantId: tenants.a } });
+
+  cancelResponse = () => Response.json({ error: { message: 'down' } }, { status: 500 });
+  const stray = subscription(tenants.a, customer, { id: 'sub_stray' });
+  assert.equal((await webhook('customer.subscription.created', stray)).status, 500, 'Stripe will retry');
+  cancelResponse = () => new Response('{}', { status: 200 });
+
+  stripeCalls.length = 0;
+  assert.equal((await webhook('customer.subscription.created', stray)).status, 204);
+  assert.deepEqual(stripeCalls.map((c) => `${c.method} ${c.path}`), ['DELETE /v1/subscriptions/sub_stray']);
+  // Its own "deleted" event, once cancelled, needs nothing more.
+  stripeCalls.length = 0;
+  assert.equal((await webhook('customer.subscription.deleted', subscription(tenants.a, customer, { id: 'sub_stray', status: 'canceled' }))).status, 204);
+  assert.deepEqual(stripeCalls, []);
+
+  const after = await db.billingAccount.findUniqueOrThrow({ where: { tenantId: tenants.a } });
+  assert.equal(after.stripeSubscriptionId, before.stripeSubscriptionId);
+  assert.equal(after.status, before.status);
+});
+
 test('a second checkout is refused while subscribed; the portal opens for the customer', async () => {
   const res = await call('POST', '/billing/checkout', { token: tokens.adminA, body: { tier: 'pro' } });
   assert.equal(res.status, 409);
@@ -277,6 +301,8 @@ test('a cancellation keeps the paid tier until the period ends, then the job dro
 
   // No "deleted" webhook here (as if it were lost): the job alone ends it.
   await waitFor(async () => (await tierOf(tenants.b)) === 'free', 8000);
+  // Published after the commit, so a moment after the tier is seen.
+  await waitFor(() => published.at(-1).data.tier === 'free');
   assert.deepEqual(published.at(-1).data, { tier: 'free', previousTier: 'pro' }, 'the period-end job reports it too');
   assert.equal((await status(tokens.adminB)).status, 'canceled');
   // Stripe's own "deleted" event, arriving afterwards, changes nothing.
@@ -314,23 +340,26 @@ test('an immediate cancellation (deleted event) drops the tier at once, and noth
   assert.equal(await tierOf(tenants.b), 'free', 'an ended subscription stays ended');
 });
 
-test('deleting a tenant cancels its subscription in Stripe first; a failure keeps the tenant for a retry', async () => {
+test('deleting a tenant deletes its Stripe customer first, which ends every subscription; a failure keeps the tenant for a retry', async () => {
   tenants.doomed = await seedTenant('billing-e2e-doomed', { admin: 'TenantAdmin' });
   const admin = await login(tenants.doomed, 'admin@example.com');
   await call('POST', '/billing/checkout', { token: admin, body: { tier: 'pro' } });
   await webhook('customer.subscription.created', subscription(tenants.doomed, await customerOf(tenants.doomed), { id: 'sub_doomed' }));
   assert.equal(await tierOf(tenants.doomed), 'pro');
 
-  cancelResponse = () => Response.json({ error: { message: 'down' } }, { status: 500 });
+  const customer = await customerOf(tenants.doomed);
+
+  deleteCustomerResponse = () => Response.json({ error: { message: 'down' } }, { status: 500 });
   assert.equal((await call('DELETE', `/tenants/${tenants.doomed}`, { token: tokens.super })).status, 500);
   assert.equal(await db.tenant.count({ where: { id: tenants.doomed } }), 1, 'kept, still charged: retry later');
 
-  cancelResponse = () => Response.json({ error: { code: 'resource_missing', message: 'No such subscription' } }, { status: 404 });
+  // Gone already, as an earlier attempt would leave it: the retry goes through.
+  deleteCustomerResponse = () => Response.json({ error: { code: 'resource_missing', message: 'No such customer' } }, { status: 404 });
   stripeCalls.length = 0;
   assert.equal((await call('DELETE', `/tenants/${tenants.doomed}`, { token: tokens.super })).status, 204);
-  assert.deepEqual(stripeCalls.map((c) => `${c.method} ${c.path}`), ['DELETE /v1/subscriptions/sub_doomed']);
+  assert.deepEqual(stripeCalls.map((c) => `${c.method} ${c.path}`), [`DELETE /v1/customers/${customer}`]);
   assert.equal(await db.billingAccount.count({ where: { tenantId: tenants.doomed } }), 0, 'its billing row goes by cascade');
-  cancelResponse = () => new Response('{}', { status: 200 });
+  deleteCustomerResponse = () => new Response('{}', { status: 200 });
 });
 
 test('without STRIPE_* the module is installed but off: no webhook, no checkout, and tiers are set by hand', async () => {

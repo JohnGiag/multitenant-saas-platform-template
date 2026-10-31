@@ -73,6 +73,24 @@ test('a replayed token ends the session: refresh tokens and access tokens stop a
   assert.equal(await db.authSession.count({ where: { id: sessionOf(first) } }), 0);
 });
 
+test('sign-ins and replays reach the audit log, with ids only', async () => {
+  const email = await seedUser(tenants.a);
+  const { id: actorId, role: actorRole } = await db.user.findFirstOrThrow({ where: { tenantId: tenants.a, email } });
+  const first = await signIn(email);
+  await refresh(first.refreshToken);
+  await ageRotation(first);
+  await refresh(first.refreshToken);
+
+  const rows = await db.auditLog.findMany({ where: { tenantId: tenants.a, actorId }, orderBy: { id: 'asc' } });
+  assert.deepEqual(
+    rows.map(({ actorKind, actorRole, method, route, targetId, status }) => ({ actorKind, actorRole, method, route, targetId, status })),
+    [
+      { actorKind: 'user', actorRole, method: 'POST', route: '/v1/auth/login', targetId: null, status: 200 },
+      { actorKind: 'user', actorRole, method: 'POST', route: '/v1/auth/refresh', targetId: sessionOf(first), status: 401 },
+    ],
+  );
+});
+
 test('a token two rotations old is a replay even within the moment parallel requests are forgiven', async () => {
   const first = await signIn(await seedUser(tenants.a));
   const second = await (await refresh(first.refreshToken)).json();

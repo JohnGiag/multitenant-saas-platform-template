@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isIPv6 } from 'node:net';
 import type { Principal, TenantTier } from '@repo/shared-types';
 
 export const WINDOW_MS = 60_000;
@@ -22,6 +23,19 @@ export const RESET_CEILING_LIMIT = 30;
 
 // An account's bucket for one client IP.
 export const perIp = (key: string, ip: string) => `${key}:ip:${ip}`;
+
+// What limits count as one client. One IPv6 connection owns a whole /64 (18 quintillion addresses), so counting each
+// address would stop nobody: limits count the /64. IPv4 addresses, mapped into IPv6 or not, are counted one by one.
+export function rateLimitAddress(ip: string): string {
+  const address = ip.split('%')[0]!;
+  if (!isIPv6(address) || /^::ffff:/i.test(address)) return ip;
+  const [head = '', tail] = address.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const zeros = tail === undefined ? [] : Array<string>(8 - left.length - right.length).fill('0');
+  const network = [...left, ...zeros, ...right].slice(0, 4).map((group) => parseInt(group, 16).toString(16));
+  return `${network.join(':')}::/64`;
+}
 
 export interface RateLimitPlan {
   key: string;

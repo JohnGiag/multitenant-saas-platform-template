@@ -31,6 +31,8 @@ model Tenant {
   tier      TenantTier @default(free)
   // AUTH_PROVIDER=clerk: the Clerk Organization this tenant mirrors (set by its webhooks).
   clerkOrgId String?   @unique @map("clerk_org_id")
+  // When Clerk created the event the name came from: an older one, delivered late, changes nothing.
+  clerkEventAt DateTime? @map("clerk_event_at") @db.Timestamptz(3)
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -59,6 +61,8 @@ model User {
   role         Role     @default(User)
   // AUTH_PROVIDER=clerk: the Clerk user this member is. One Clerk user can be a member of several tenants.
   clerkUserId  String?  @map("clerk_user_id")
+  // When Clerk created the event the email came from: an older one, delivered late, changes nothing.
+  clerkEventAt DateTime? @map("clerk_event_at") @db.Timestamptz(3)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -140,14 +144,15 @@ model PushDevice {
   id        String   @id @default(uuid(7)) @db.Uuid
   tenantId  String   @map("tenant_id") @db.Uuid
   userId    String   @map("user_id") @db.Uuid
-  // One device belongs to whoever registered it last.
-  token     String   @unique
+  token     String
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Within a tenant, one device belongs to whoever registered it last. No tenant can touch another's row.
+  @@unique([tenantId, token])
   @@index([tenantId, userId])
   @@map("push_devices")
 }

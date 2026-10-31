@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { after, before, test } from 'node:test';
+import { UserExportSchema } from '@repo/shared-types';
 import { LOGIN_ACCOUNT_LIMIT } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
 import { cleanup, db, PASSWORD, seedTenant, startApp } from './helpers.mjs';
 
@@ -60,6 +61,24 @@ test('another tenant’s users are not found, and stay untouched', async () => {
   assert.equal((await call('PATCH', `/users/${bob}`, { token: tokens.admin, body: { role: 'Auditor' } })).status, 404);
   assert.equal((await call('DELETE', `/users/${bob}`, { token: tokens.admin })).status, 404);
   assert.equal((await db.user.findUniqueOrThrow({ where: { id: bob } })).role, 'User');
+});
+
+test('a TenantAdmin exports a member’s records, in this tenant only', async () => {
+  const user = await idOf(tenants.a, 'user');
+  const sessions = await db.authSession.findMany({ where: { tenantId: tenants.a, userId: user }, orderBy: { id: 'asc' } });
+  assert.ok(sessions.length > 0, 'the sign-in above opened one');
+  const res = await call('GET', `/users/${user}/export?limit=1`, { token: tokens.admin });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.deepEqual(UserExportSchema.parse(body), body, 'response does not match shared schema');
+  assert.equal(body.user.id, user);
+  assert.equal(body.sessions.items[0].id, sessions[0].id);
+
+  const bob = await idOf(tenants.b, 'bob');
+  assert.equal((await call('GET', `/users/${bob}/export`, { token: tokens.admin })).status, 404);
+  assert.equal((await call('GET', `/users/${user}/export`, { token: tokens.auditor })).status, 403);
+  assert.equal((await call('GET', `/users/${user}/export`, { token: tokens.user })).status, 403);
+  assert.equal((await call('GET', `/users/${user}/export`, { token: tokens.super, tenant: tenants.a })).status, 403);
 });
 
 test('roles change, members are removed, and the last TenantAdmin stays', async () => {

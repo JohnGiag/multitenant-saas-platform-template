@@ -51,9 +51,14 @@ export class StripeApi {
     return this.call('GET', `/checkout/sessions/${encodeURIComponent(sessionId)}?expand[]=subscription`);
   }
 
-  // Cancels at once (no proration or refund): used when the tenant itself is deleted.
+  // Cancels at once (no proration or refund): used on a second subscription the tier does not follow.
   async cancelSubscription(subscriptionId: string): Promise<void> {
     await this.call('DELETE', `/subscriptions/${encodeURIComponent(subscriptionId)}`);
+  }
+
+  // Also cancels every subscription of the customer at once; Stripe keeps its past invoices.
+  async deleteCustomer(customerId: string): Promise<void> {
+    await this.call('DELETE', `/customers/${encodeURIComponent(customerId)}`);
   }
 
   private async call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: Record<string, string>, idempotencyKey?: string): Promise<T> {

@@ -48,10 +48,10 @@ test('successful writes are recorded with the actor; reads and rejected requests
 test("a SuperAdmin's actions on a tenant are recorded in the SuperAdmin's tenant, and outlive it", async () => {
   const doomed = await seedTenant('audit-e2e-doomed', { admin: 'TenantAdmin', user: 'User' });
   const target = await userId(doomed, 'user');
-  // The doomed tenant's own admin acts too: that record goes with the tenant.
+  // The doomed tenant's own admin signs in and acts too: those records go with the tenant.
   const adminToken = await login(doomed, 'admin@example.com');
   await call('POST', '/api-keys', { token: adminToken, body: { name: 'k' } });
-  assert.equal((await auditOf(doomed)).length, 1);
+  assert.equal((await auditOf(doomed)).length, 2);
 
   const patched = await call('PATCH', `/users/${target}`, { token: tokens.super, tenant: doomed, body: { role: 'Auditor' } });
   assert.equal(patched.status, 200);
@@ -89,11 +89,12 @@ test('the audit log is readable newest first, page by page, by its own tenant on
   assert.deepEqual(page2.body.items.map((e) => e.id), ids.slice(2));
   assert.equal(page2.body.nextCursor, null);
 
-  // Auditors read; members do not; nothing of another tenant shows up.
-  assert.equal((await read(await login(tenants.reader, 'auditor@example.com'))).body.items.length, 3);
+  // Auditors read; members do not; nothing of another tenant shows up. The signing-in counts too.
+  assert.equal((await read(await login(tenants.reader, 'auditor@example.com'))).body.items.length, ids.length + 1);
   assert.equal((await read(await login(tenants.reader, 'user@example.com'))).status, 403);
-  assert.equal((await auditOf(tenants.other)).length, 1);
-  assert.ok((await read(admin, '?limit=100')).body.items.every((e) => ids.includes(e.id)));
+  const elsewhere = (await auditOf(tenants.other)).map((r) => r.id);
+  assert.equal(elsewhere.length, 2);
+  assert.ok((await read(admin, '?limit=100')).body.items.every((e) => !elsewhere.includes(e.id)));
 
   // SuperAdmin: its own platform trail, never another tenant's.
   const platform = await read(tokens.super, '?limit=100');

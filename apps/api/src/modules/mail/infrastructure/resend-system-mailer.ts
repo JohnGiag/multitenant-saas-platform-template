@@ -20,7 +20,10 @@ export class ResendSystemMailer implements SystemMailer {
     const apiKey = this.config.get<string>('RESEND_PLATFORM_KEY');
     if (!apiKey) throw new MailNotConfiguredError('No email credentials: set RESEND_PLATFORM_KEY');
     const from = this.config.get<string>('RESEND_PLATFORM_FROM') || DEFAULT_PLATFORM_FROM;
-    const result = await sendWithResend({ apiKey, from, to, subject, text });
+    const result = await sendWithResend({ apiKey, from, to, subject, text }).catch((error: unknown) => {
+      // A timeout or a network failure.
+      throw new MailDeliveryError(`Resend could not be reached: ${error instanceof Error ? error.message : String(error)}`);
+    });
     if (!result.ok) throw new MailDeliveryError(result.detail);
     return result.id;
   }

@@ -37,7 +37,7 @@ export class TenantEvents {
   }
 
   // Never throws: the change it reports has already happened, and failing the caller's response now would only make
-  // its client retry the change.
+  // its client retry the change. Each listener holds up that response, so it must give up soon (see withTimeout).
   async publish(tenantId: string, type: string, data: Record<string, unknown> = {}): Promise<void> {
     const event: TenantEvent = { id: `evt_${randomUUID()}`, type, tenantId, occurredAt: new Date(), data };
     for (const listener of this.listeners) {

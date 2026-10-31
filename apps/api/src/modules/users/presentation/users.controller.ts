@@ -20,6 +20,7 @@ import {
   ChangePasswordSchema,
   cursorPage,
   UpdateUserSchema,
+  UserExportSchema,
   UserPageQuerySchema,
   UserSchema,
   type ChangePasswordDto,
@@ -27,6 +28,7 @@ import {
   type Principal,
   type UpdateUserDto,
   type User,
+  type UserExport,
   type UserPageQuery,
 } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
@@ -61,6 +63,20 @@ export class UsersController {
     @Query(new ZodValidationPipe(UserPageQuerySchema)) query: UserPageQuery,
   ): Promise<CursorPage<User>> {
     return this.users.list(tenantId, query);
+  }
+
+  // For a data subject's request, which reaches the tenant: its admins' business, not a SuperAdmin's.
+  @Roles('TenantAdmin')
+  @ApiDoc("Export a member's records: profile and sessions (`cursor` and `limit` page the sessions). Their actions are in GET /v1/audit-logs?actorId=", UserExportSchema)
+  @Get(':id/export')
+  async export(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query(new ZodValidationPipe(UserPageQuerySchema)) query: UserPageQuery,
+  ): Promise<UserExport> {
+    const records = await this.users.exportRecords(tenantId, id, query);
+    if (!records) throw new NotFoundException();
+    return records;
   }
 
   @ApiDoc("Change a member's role (never to or from SuperAdmin; a tenant keeps at least one TenantAdmin, else 409)", UserSchema)

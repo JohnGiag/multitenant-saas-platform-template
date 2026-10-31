@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { AssignableRole, CursorPage, Role, User, UserPageQuery } from '@repo/shared-types';
+import type { AssignableRole, CursorPage, Role, User, UserExport, UserPageQuery } from '@repo/shared-types';
 import { toCursorPage } from '../../../common/cursor-page.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
@@ -31,6 +31,20 @@ export class PrismaUserRepository implements UserRepository {
       select: PUBLIC_FIELDS,
     });
     return toCursorPage(rows.map(toUser), limit, (u) => u.id);
+  }
+
+  async exportRecords(tenantId: string, id: string, { cursor, limit }: UserPageQuery): Promise<UserExport | null> {
+    const user = await this.prisma.user.findFirst({ where: { id, tenantId }, select: PUBLIC_FIELDS });
+    if (!user) return null;
+    // A person's sessions are few, so sorting the (tenant_id, user_id) index's matches costs little.
+    const sessions = await this.prisma.authSession.findMany({
+      where: { tenantId, userId: id, ...(cursor && { id: { gt: cursor } }) },
+      orderBy: { id: 'asc' },
+      take: limit + 1,
+      select: { id: true, createdAt: true, expiresAt: true },
+    });
+    const items = sessions.map((s) => ({ id: s.id, createdAt: s.createdAt.toISOString(), expiresAt: s.expiresAt.toISOString() }));
+    return { user: toUser(user), sessions: toCursorPage(items, limit, (s) => s.id) };
   }
 
   updateRole(tenantId: string, id: string, role: AssignableRole) {

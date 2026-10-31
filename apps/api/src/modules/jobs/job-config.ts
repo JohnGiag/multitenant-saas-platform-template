@@ -1,5 +1,8 @@
 import type { ConfigService } from '@nestjs/config';
 
+// How long a request waits on a queue. Queue connections wait out a Redis outage, which a request must not.
+export const QUEUE_TIMEOUT_MS = 2000;
+
 // Ported from nestjs-fault-tolerant-queue: a malformed value stops the app at boot, not at the first job.
 function positiveInt(config: ConfigService, name: string, fallback: number): number {
   const raw = config.get<string>(name);

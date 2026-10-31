@@ -114,6 +114,7 @@ before(async () => {
 
   await waitFor(() => spans().some((s) => s.name.startsWith('process ')) && received.some((r) => r.path.startsWith('/hook')));
   await waitFor(() => dataPoints('jobs.depth').length > 0 && logRecords().some((l) => /replayed/.test(l.body?.stringValue)));
+  await waitFor(() => dataPoints('http.server.request.duration').some((p) => attribute(p, 'http.route') === '/v1/api-keys/:id'));
 });
 
 after(async () => {

@@ -246,6 +246,23 @@ test('an email already taken in one tenant skips the change there only', async (
   assert.equal((await memberOf(org('taken'), eli)).email, 'eli@example.com');
 });
 
+test('a late, older update changes neither an email nor a tenant name', async () => {
+  const gus = clerkUser('gus');
+  const start = Date.now() + 1000;
+  await webhook('organizationMembership.created', membership(org('late'), gus, 'gus@example.com'), { at: start });
+  const emailTo = (address) => ({ id: gus, primary_email_address_id: 'idn_1', email_addresses: [{ id: 'idn_1', email_address: address }] });
+
+  assert.equal(await webhook('user.updated', emailTo('gus.newest@example.com'), { at: start + 2000 }), 204);
+  assert.equal(await webhook('user.updated', emailTo('gus.older@example.com'), { at: start + 1000 }), 204);
+  assert.equal((await memberOf(org('late'), gus)).email, 'gus.newest@example.com');
+
+  await webhook('organization.updated', { id: org('late'), name: 'Newest' }, { at: start + 2000 });
+  await webhook('organization.updated', { id: org('late'), name: 'Older' }, { at: start + 1000 });
+  // A membership event carries the organization too, with the name it had then.
+  await webhook('organizationMembership.created', membership(org('late'), clerkUser('hal'), 'hal@example.com'), { at: start + 1000 });
+  assert.equal((await db.tenant.findUniqueOrThrow({ where: { clerkOrgId: org('late') } })).name, 'Newest');
+});
+
 test('organization updates rename the tenant; deleting it removes the tenant and its data', async () => {
   await webhook('organization.created', { id: org('gone'), name: 'Gone Soon' });
   await webhook('organization.updated', { id: org('gone'), name: 'Renamed' });

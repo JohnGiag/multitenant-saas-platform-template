@@ -33,6 +33,7 @@ import {
   type WebhookSecret,
 } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
+import { unavailableOnTimeout } from '../../../common/unavailable-on-timeout.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Roles } from '../../../modules/auth/presentation/decorators.js';
 import { RequireFeature } from '../../../modules/feature-flags/presentation/require-feature.js';
@@ -110,7 +111,7 @@ export class WebhooksController {
   @Post(':id/test')
   @HttpCode(202)
   async test(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    const result = await this.webhooks.sendTest(tenantId, id);
+    const result = await this.webhooks.sendTest(tenantId, id).catch(unavailableOnTimeout);
     if (result === 'disabled') throw new ConflictException('This endpoint is turned off: turn it on first');
     found(result);
   }

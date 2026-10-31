@@ -15,7 +15,7 @@ import { metrics } from '@opentelemetry/api';
 import type { AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { forwardedClientIp } from '../domain/forwarded-client.js';
 import { RATE_LIMITER, type RateLimiter, type RateLimitResult } from '../domain/ports/rate-limiter.port.js';
-import { planRateLimit } from '../domain/rate-limit-policy.js';
+import { planRateLimit, rateLimitAddress } from '../domain/rate-limit-policy.js';
 import { FAIL_OPEN_KEY } from './fail-open.js';
 import { TRUSTED_CALLER_KEY, type TrustedCallerCheck } from './trusted-caller.js';
 
@@ -51,7 +51,7 @@ export class RateLimitGuard implements CanActivate {
     const req = http.getRequest<RateLimitedRequest>();
     const res = http.getResponse<{ setHeader(name: string, value: number): void }>();
     // The browser's IP when the dashboard vouches for it; otherwise req.ip, which honours TRUST_PROXY_HOPS.
-    req.clientIp = this.forwardedIp(req.headers) ?? req.ip ?? 'unknown';
+    req.clientIp = rateLimitAddress(this.forwardedIp(req.headers) ?? req.ip ?? 'unknown');
     // A provider proven by its signature (a webhook) is not limited: its own retries would otherwise be refused.
     const trusted = this.reflector.getAllAndOverride<Type<TrustedCallerCheck> | undefined>(TRUSTED_CALLER_KEY, [ctx.getHandler(), ctx.getClass()]);
     if (trusted && this.moduleRef.get(trusted, { strict: false }).isTrusted(req)) return true;
