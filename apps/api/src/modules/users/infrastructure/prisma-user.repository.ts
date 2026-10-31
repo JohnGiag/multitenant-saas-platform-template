@@ -68,10 +68,12 @@ export class PrismaUserRepository implements UserRepository {
     const user = await this.prisma.user.findFirst({ where: { id: userId, tenantId }, select: { passwordHash: true } });
     if (!user?.passwordHash) return 'no_password' as const;
     if (!(await verifyPassword(user.passwordHash, currentPassword))) return 'wrong_password' as const;
-    await this.prisma.user.updateMany({
-      where: { id: userId, tenantId },
-      data: { passwordHash: await hashPassword(newPassword) },
-    });
+    const passwordHash = await hashPassword(newPassword);
+    await this.prisma.$transaction([
+      this.prisma.user.updateMany({ where: { id: userId, tenantId }, data: { passwordHash } }),
+      // Whoever had the old password may hold a session.
+      this.prisma.authSession.deleteMany({ where: { userId, tenantId } }),
+    ]);
     return 'changed' as const;
   }
 }

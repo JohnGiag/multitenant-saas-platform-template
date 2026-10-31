@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { test } from 'node:test';
+import { decideRefresh, parseRefreshToken, signRefreshToken } from '../dist/modules/auth/domain/refresh-token.js';
 import { decideAccess } from '../dist/modules/auth/domain/access-policy.js';
 import {
   apiKeySecretMatches,
@@ -81,4 +82,27 @@ test('malformed API keys do not parse', () => {
   for (const bad of ['', 'eak_', raw.slice(0, -1), `${raw}x`, raw.replace('eak_', 'xak_'), ` ${raw}`]) {
     assert.equal(parseApiKey(bad), null, JSON.stringify(bad));
   }
+});
+
+test('refresh tokens: derived from the session, and any change to one is refused', () => {
+  const key = new TextEncoder().encode('k'.repeat(48));
+  const claims = { tenantId: crypto.randomUUID(), sessionId: crypto.randomUUID(), generation: 3 };
+  const token = signRefreshToken(key, claims);
+  assert.equal(token, signRefreshToken(key, claims), 'the same session and generation give the same token');
+  assert.deepEqual(parseRefreshToken(key, token), claims);
+  assert.equal(parseRefreshToken(new TextEncoder().encode('o'.repeat(48)), token), null, 'another key');
+  assert.equal(parseRefreshToken(key, token.replace('.3.', '.4.')), null, 'another generation');
+  assert.equal(parseRefreshToken(key, token.replace(claims.tenantId, crypto.randomUUID())), null, 'another tenant');
+  assert.equal(parseRefreshToken(key, 'garbage'), null);
+});
+
+test('rotation: the current token rotates, the last one repeats for a moment, anything else is a replay', () => {
+  const now = new Date(1_800_000_000_000);
+  const rotated = (ms) => ({ generation: 5, rotatedAt: new Date(now.getTime() - ms) });
+  assert.equal(decideRefresh({ generation: 0, rotatedAt: null }, 0, now), 'rotate');
+  assert.equal(decideRefresh(rotated(1000), 5, now), 'rotate');
+  assert.equal(decideRefresh(rotated(30_000), 4, now), 'repeat');
+  assert.equal(decideRefresh(rotated(30_001), 4, now), 'reuse');
+  assert.equal(decideRefresh(rotated(1000), 3, now), 'reuse');
+  assert.equal(decideRefresh(rotated(1000), 6, now), 'reuse', 'a generation that never existed');
 });

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module.js';
 import { MailModule } from '../mail/mail.module.js';
 import { RateLimitModule } from '../rate-limit/rate-limit.module.js';
 import { INVITATION_SERVICE } from './domain/ports/invitation.service.js';
@@ -12,7 +13,7 @@ import { PasswordResetController } from './presentation/password-reset.controlle
 import { UsersController } from './presentation/users.controller.js';
 
 @Module({
-  imports: [RateLimitModule, MailModule],
+  imports: [AuthModule, RateLimitModule, MailModule],
   controllers: [UsersController, InvitationsController, PasswordResetController],
   providers: [
     { provide: USER_REPOSITORY, useClass: PrismaUserRepository },

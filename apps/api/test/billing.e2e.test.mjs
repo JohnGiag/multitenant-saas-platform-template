@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { BillingRedirectSchema, BillingStatusSchema } from '@repo/shared-types';
+import { ACCESS_REVOCATIONS } from '../dist/modules/auth/domain/ports/access-revocations.port.js';
+import { TenantEvents } from '../dist/modules/events/domain/tenant-events.js';
 import { PUBLIC_LIMIT } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
 import { cleanup, db, randomIp, seedTenant, startApp, testQueue, waitFor } from './helpers.mjs';
 
@@ -47,6 +49,8 @@ globalThis.fetch = async (input, init) => {
 
 const tenants = {};
 const tokens = {};
+// Every event the app publishes.
+const published = [];
 let app, call, login;
 
 before(async () => {
@@ -54,6 +58,9 @@ before(async () => {
   tenants.a = await seedTenant('billing-e2e-a', { admin: 'TenantAdmin', user: 'User', auditor: 'Auditor' });
   tenants.b = await seedTenant('billing-e2e-b', { admin: 'TenantAdmin' });
   ({ app, call, login } = await startApp());
+  // These tests hold one token across tier changes, which refuse it for real (sessions.e2e proves that).
+  app.get(ACCESS_REVOCATIONS, { strict: false }).isRevoked = async () => false;
+  app.get(TenantEvents).subscribe(async (event) => void published.push(event));
   tokens.super = await login(tenants.platform, 'super@example.com');
   tokens.adminA = await login(tenants.a, 'admin@example.com');
   tokens.userA = await login(tenants.a, 'user@example.com');
@@ -207,6 +214,8 @@ test('a subscription sets the tier; a late, older event changes nothing; a faile
   const created = now();
   assert.equal((await webhook('customer.subscription.created', subscription(tenants.a, customer), { created })).status, 204);
   assert.equal(await tierOf(tenants.a), 'pro');
+  const changed = published.find((e) => e.type === 'tenant.tier_changed' && e.tenantId === tenants.a);
+  assert.deepEqual(changed?.data, { tier: 'pro', previousTier: 'free' });
   const s = await status();
   assert.equal(s.status, 'active');
   assert.ok(s.currentPeriodEnd);
@@ -268,6 +277,7 @@ test('a cancellation keeps the paid tier until the period ends, then the job dro
 
   // No "deleted" webhook here (as if it were lost): the job alone ends it.
   await waitFor(async () => (await tierOf(tenants.b)) === 'free', 8000);
+  assert.deepEqual(published.at(-1).data, { tier: 'free', previousTier: 'pro' }, 'the period-end job reports it too');
   assert.equal((await status(tokens.adminB)).status, 'canceled');
   // Stripe's own "deleted" event, arriving afterwards, changes nothing.
   await webhook('customer.subscription.deleted', subscription(tenants.b, customer, { id: 'sub_b', status: 'canceled' }), { created: created + 5 });

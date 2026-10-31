@@ -14,8 +14,14 @@ export type SignInDto = z.infer<typeof SignInSchema>;
 export const AuthTokenSchema = z.object({
   accessToken: z.string(),
   expiresIn: z.number().int(),
+  // Single use: swap it at POST /v1/auth/refresh for a new pair, and keep the new one.
+  refreshToken: z.string(),
+  refreshExpiresIn: z.number().int(),
 });
 export type AuthToken = z.infer<typeof AuthTokenSchema>;
+
+export const RefreshTokenSchema = z.object({ refreshToken: z.string().min(1).max(300) });
+export type RefreshTokenDto = z.infer<typeof RefreshTokenSchema>;
 
 // Only tenants whose account accepted the password, so it reveals nothing to someone without it.
 export const TenantChoiceSchema = z.object({

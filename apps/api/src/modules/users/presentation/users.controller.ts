@@ -31,6 +31,7 @@ import {
 } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
+import { ACCESS_REVOCATIONS, type AccessRevocations } from '../../auth/domain/ports/access-revocations.port.js';
 import { CurrentPrincipal, Roles, SelfService } from '../../auth/presentation/decorators.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
 import { passwordChangeKey } from '../../rate-limit/domain/rate-limit-policy.js';
@@ -49,6 +50,7 @@ export class UsersController {
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
     @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
     private readonly events: TenantEvents,
+    @Inject(ACCESS_REVOCATIONS) private readonly revocations: AccessRevocations,
   ) {}
 
   @Roles('SuperAdmin', 'TenantAdmin', 'Auditor')
@@ -69,6 +71,8 @@ export class UsersController {
     @Body(new ZodValidationPipe(UpdateUserSchema)) { role }: UpdateUserDto,
   ): Promise<User> {
     const user = orFail(await this.users.updateRole(tenantId, id, role));
+    // Their session stays: the next refresh brings the new role, and the old one stops working now.
+    await this.revocations.revoke('user', user.id);
     await this.events.publish(tenantId, 'member.role_changed', { userId: user.id, role: user.role });
     return user;
   }
@@ -79,6 +83,7 @@ export class UsersController {
   @HttpCode(204)
   async remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
     orFail(await this.users.remove(tenantId, id));
+    await this.revocations.revoke('user', id);
     await this.events.publish(tenantId, 'member.removed', { userId: id });
   }
 
@@ -86,7 +91,7 @@ export class UsersController {
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
   @SelfService()
   @LocalAuthOnly()
-  @ApiDoc('Change your own password; wrong guesses count towards the sign-in limit')
+  @ApiDoc('Change your own password; wrong guesses count towards the sign-in limit. Every session ends, this one too: sign in again')
   @Put('me/password')
   @HttpCode(204)
   async changePassword(
@@ -105,6 +110,7 @@ export class UsersController {
     );
     if (result === 'no_password') throw new ConflictException('This account signs in through an external provider');
     if (result === 'wrong_password') throw new BadRequestException('Current password is incorrect');
+    await this.revocations.revoke('user', principal.id);
     await clearAccountAttempts(this.limiter, key);
   }
 }

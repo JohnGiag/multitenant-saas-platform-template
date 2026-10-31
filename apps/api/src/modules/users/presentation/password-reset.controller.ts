@@ -6,6 +6,7 @@ import {
   type PasswordResetRequestDto,
 } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
+import { ACCESS_REVOCATIONS, type AccessRevocations } from '../../auth/domain/ports/access-revocations.port.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Public, type AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
@@ -22,6 +23,7 @@ export class PasswordResetController {
   constructor(
     @Inject(PASSWORD_RESET_SERVICE) private readonly resets: PasswordResetService,
     @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
+    @Inject(ACCESS_REVOCATIONS) private readonly revocations: AccessRevocations,
   ) {}
 
   // Always 202, sent before any lookup or email: neither the answer nor its timing tells whether
@@ -48,7 +50,7 @@ export class PasswordResetController {
   }
 
   @Public()
-  @ApiDoc('Set a new password with the emailed token; also lifts any sign-in lockout')
+  @ApiDoc('Set a new password with the emailed token; also lifts any sign-in lockout and ends every session of the account')
   @Post('confirm')
   @HttpCode(204)
   async confirm(
@@ -57,6 +59,7 @@ export class PasswordResetController {
   ): Promise<void> {
     const result = await this.resets.confirm(token, password);
     if (result === 'invalid') throw new BadRequestException('This reset link is invalid or has expired');
+    await this.revocations.revoke('user', result.userId);
     // A user locked out by failed logins can sign in again with the new password, either way: the lockout of
     // this IP and the all-IPs ceiling (the owner proved themselves with the emailed token).
     for (const key of [loginAccountKey(result.tenantId, result.email), loginEmailKey(result.email)]) {

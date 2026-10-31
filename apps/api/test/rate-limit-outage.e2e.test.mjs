@@ -1,6 +1,7 @@
 // Runs in its own process: points the app at a Redis that does not exist.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import { SignJWT } from 'jose';
 import { generateApiKey, hashApiKeySecret } from '../dist/modules/auth/domain/api-key.js';
 import { cleanup, db, PASSWORD, seedTenant, startApp } from './helpers.mjs';
 
@@ -24,6 +25,17 @@ test('authenticated requests fail open: served, but unmetered', async () => {
   const res = await call('GET', '/auth/me', { apiKey });
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('x-ratelimit-limit'), null);
+});
+
+test('the revocation check fails open too: a valid access token still works', async () => {
+  const user = await db.user.findFirstOrThrow({ where: { tenantId } });
+  const token = await new SignJWT({ tid: tenantId, sid: crypto.randomUUID(), at: Date.now(), role: user.role, tier: 'free' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(user.id)
+    .setIssuer('enterprise-api-starter')
+    .setExpirationTime('5m')
+    .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+  assert.equal((await call('GET', '/auth/me', { token })).status, 200);
 });
 
 test('public routes fail closed: login answers 503', async () => {

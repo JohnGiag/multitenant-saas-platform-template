@@ -68,7 +68,7 @@ export class PrismaTenantRepository implements TenantRepository {
       this.prisma.tenantIntegration.deleteMany({ where }),
       this.prisma.apiKey.deleteMany({ where }),
       this.prisma.invitation.deleteMany({ where }),
-      // Also removes their push devices and password resets (cascade).
+      // Also removes their push devices, password resets and sessions (cascade).
       this.prisma.user.deleteMany({ where }),
       this.prisma.tenant.deleteMany({ where: { id } }),
     ]);

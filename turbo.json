@@ -20,6 +20,10 @@
       "dependsOn": ["build"],
       "cache": false
     },
+    "@repo/api#test": {
+      "dependsOn": ["build", "@repo/web#build"],
+      "cache": false
+    },
     "test:e2e": {
       "dependsOn": ["^build", "@repo/api#build"],
       "cache": false

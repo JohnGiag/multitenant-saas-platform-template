@@ -274,6 +274,8 @@ test('Clerk owns sign-in, passwords, invitations and membership lifecycle (409);
   const managed = [
     await call('POST', '/auth/login', { body: { tenantId: member.tenantId, email: 'ada@example.com', password: 'x' } }),
     await call('POST', '/auth/password-reset', { body: { tenantId: member.tenantId, email: 'ada@example.com' } }),
+    await call('POST', '/auth/refresh', { body: { refreshToken: 'x' } }),
+    await call('POST', '/auth/logout', { body: { refreshToken: 'x' } }),
     await as('POST', '/invitations', { email: 'new@example.com' }),
     await as('GET', '/invitations'),
     await as('DELETE', `/users/${member.id}`),

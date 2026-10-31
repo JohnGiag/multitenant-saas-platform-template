@@ -33,6 +33,13 @@ export class ClerkAuthAdapter implements AuthService {
     return null;
   }
 
+  // Clerk keeps its own sessions; these routes answer 409 in Clerk mode (@LocalAuthOnly).
+  async refresh(): Promise<AuthToken | null> {
+    return null;
+  }
+
+  async signOut(): Promise<void> {}
+
   async verifyAccessToken(token: string): Promise<Principal | null> {
     let payload: unknown;
     try {

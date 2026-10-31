@@ -2,6 +2,7 @@ import 'server-only';
 import {
   CLIENT_IP_HEADER,
   DASHBOARD_SECRET_HEADER,
+  type AuthToken,
   type Capability,
   type CapabilityResponse,
   type Principal,
@@ -11,8 +12,9 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { cache } from 'react';
 import { clientIpFrom, parseProxyHops } from './client-ip';
+import { PAGE_HEADER } from './session-page';
 import type { FormState } from './form-state';
-import { getTenantOverride, getToken } from './session';
+import { endSession, getRefreshToken, getTenantOverride, getToken, renewSession } from './session';
 
 export const API_URL = process.env.API_URL ?? 'http://localhost:3000';
 export const TIMEOUT_MS = 10_000;
@@ -42,15 +44,38 @@ export async function publicApi<T>(path: string, options: RequestOptions = {}): 
   return request<T>(path, options, {});
 }
 
-// As the signed-in user (and the SuperAdmin's selected tenant). No session or an expired one: back to /login.
+// Where a page goes when its token is missing or refused. Pages cannot set cookies, so a session that may still be
+// renewed goes through the route that can, and comes back; it goes to /login if the session has ended.
+async function leave(): Promise<never> {
+  if (!(await getRefreshToken())) redirect('/login');
+  const page = (await headers()).get(PAGE_HEADER);
+  redirect(`/session/refresh?${new URLSearchParams({ next: page ?? '/' })}`);
+}
+
+// For route handlers and server actions, which can set cookies. False when the session has ended.
+export async function refreshSession(): Promise<boolean> {
+  const refreshToken = await getRefreshToken();
+  if (!refreshToken) return false;
+  try {
+    await renewSession(await publicApi<AuthToken>('/auth/refresh', { method: 'POST', body: { refreshToken } }));
+    return true;
+  } catch (error) {
+    // Anything else (the API down) is not the end of the session: keep the cookie for when it is back.
+    if (!(error instanceof ApiError && error.status === 401)) throw error;
+    await endSession();
+    return false;
+  }
+}
+
+// As the signed-in user (and the SuperAdmin's selected tenant). No session or an expired one: renewed, or /login.
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const token = await getToken();
-  if (!token) redirect('/login');
+  if (!token) return leave();
   const tenant = options.ownTenant ? undefined : await getTenantOverride();
   try {
     return await request<T>(path, options, { authorization: `Bearer ${token}`, ...(tenant && { 'x-tenant-id': tenant }) });
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) redirect('/login');
+    if (error instanceof ApiError && error.status === 401) return leave();
     throw error;
   }
 }

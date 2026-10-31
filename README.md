@@ -202,14 +202,16 @@ Access is denied by default: a route answers only the roles it lists, and `Super
 - **`SuperAdmin` manages tenants and their users, nothing inside them.** It never sees a tenant's secrets, messages, files or audit log, not even with `X-Tenant-Id`.
 - **No one becomes `SuperAdmin` through the API,** and `SuperAdmin` accounts cannot be changed or removed through it. Create the first one in the database: locally `db:seed-demo` does it; in production, insert it with an Argon2id `password_hash` ([Clerk mode](#clerk-mode) has its own steps).
 - **A tenant always keeps at least one `TenantAdmin`.** A change that would remove the last one answers `409`, even when two admins demote each other at the same moment.
-- Role changes and removals apply when the user's current token expires, within 15 minutes. In Clerk mode they apply at once.
+- Role changes and removals apply at once, in both modes.
 
 ## Authentication
 
 ### Built-in (`AUTH_PROVIDER=local`)
 
-- **Sign-in needs only email and password.** `POST /v1/auth/login` returns a 15-minute JWT: send it as `Authorization: Bearer <token>`.
+- **Sign-in needs only email and password.** `POST /v1/auth/login` returns a 15-minute JWT (send it as `Authorization: Bearer <token>`) and a 30-day refresh token.
 - **One email, several tenants:** emails are unique per tenant. When the password matches accounts in several tenants, the answer is `{ tenants: [{ id, name }] }` and the client signs in again with the chosen `tenantId`. Only tenants whose account accepted the password are listed, so the answer reveals nothing without it.
+- **Staying signed in:** `POST /v1/auth/refresh` swaps the refresh token for a new pair, and the session stays alive while it is used at least every 30 days. Each refresh token works once. Parallel requests with the same one are safe for 30 seconds and get the same answer; after that a replay is treated as theft and ends the session. `POST /v1/auth/logout` ends it. Refresh tokens are derived from the session, so the database holds none.
+- **Revocation is immediate.** Each request checks short-lived Redis keys, so these stop existing access tokens at once: signing out or a replay (that session), a password change or reset (every session of the account), a role change or removal (the user, who keeps the session and refreshes into the new role), a tier change or a deleted tenant (everyone in it). While Redis is down the check is skipped, and tokens simply run out within 15 minutes.
 - **API keys** (`X-API-Key: <key>`) are for a tenant's own servers and scripts. Not to be confused with the BYOK keys under Settings.
 
 ### Users and invitations
@@ -355,7 +357,7 @@ Optional module `webhooks`: a tenant's events, delivered to HTTPS endpoints its 
 | Settings | everyone | Tenant name, and one tab per configurable module |
 | Account | everyone | Your role, and changing your password (local mode) |
 
-- **Session:** an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production). When the 15-minute token expires, the next request goes back to `/login`. `getToken()` in `src/lib/session.ts` is the one place that knows where the token comes from.
+- **Session:** `httpOnly`, `SameSite=Lax` cookies (`Secure` in production) for the access and refresh tokens. When the access token expires or is refused, the dashboard renews it through `/session/refresh` without anyone noticing, and goes to `/login` only when the session has ended. `getToken()` in `src/lib/session.ts` is the one place that knows where the token comes from.
 - **Live notifications:** the browser's `EventSource` connects to the dashboard's `/notifications/stream`, which adds the token and relays the API's stream. There is no history: only what arrives while the page is open.
 - **Tenant switcher:** a `SuperAdmin` picks the tenant to act on (sent as `X-Tenant-Id`). Everyone else sees their own tenant's name, or Clerk's organization switcher in Clerk mode.
 - **Languages:** English and Greek. The text lives in the API's `translations` table (one row per language and key) and comes from the public `GET /v1/translations/:locale`, which falls back to English for keys a language lacks. The dashboard caches it for a minute, so an edit in the table shows without a deploy. The language switcher stores the choice in a `locale` cookie; without one, the browser's `Accept-Language` decides. To add a language: list it in `LOCALES` (`packages/shared-types/src/i18n.ts`) and insert its rows in a migration. Clerk's own widgets and the API's error messages stay in English.

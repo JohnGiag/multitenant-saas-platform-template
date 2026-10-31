@@ -40,6 +40,7 @@ model Tenant {
   pushDevices    PushDevice[]
   invitations    Invitation[]
   passwordResets PasswordReset[]
+  authSessions   AuthSession[]
   auditLogs      AuditLog[]
   storageObjects StorageObject[]
   billingAccount BillingAccount?
@@ -63,6 +64,7 @@ model User {
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   pushDevices    PushDevice[]
   passwordResets PasswordReset[]
+  authSessions   AuthSession[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, clerkUserId])
@@ -180,6 +182,25 @@ model PasswordReset {
 
   @@index([tenantId, userId])
   @@map("password_resets")
+}
+
+// A signed-in session (local auth): what keeps a user signed in past their short-lived access token. No token is
+// stored: refresh tokens are derived from the session and its generation, which each refresh advances.
+model AuthSession {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  generation Int       @default(0)
+  rotatedAt  DateTime? @map("rotated_at") @db.Timestamptz(3)
+  // Pushed forward by each refresh.
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@map("auth_sessions")
 }
 
 // Who changed what (ISO 27001): one row per successful write by a signed-in user or API key. Append-only.

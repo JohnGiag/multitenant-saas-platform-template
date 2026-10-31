@@ -6,6 +6,8 @@ import { CLERK } from './auth-mode';
 
 // httpOnly: page scripts (and so any XSS) can never read the token. Server actions check Origin (CSRF).
 const TOKEN_COOKIE = 'session';
+// Local mode: renews the session once the access token is gone or refused (app/session/refresh).
+const REFRESH_COOKIE = 'refresh';
 // The tenant a SuperAdmin is acting on (sent as X-Tenant-Id); absent means their own.
 const TENANT_COOKIE = 'tenant';
 
@@ -18,15 +20,26 @@ export async function getToken(): Promise<string | undefined> {
   return (await cookies()).get(TOKEN_COOKIE)?.value;
 }
 
-export async function startSession({ accessToken, expiresIn }: AuthToken): Promise<void> {
+export async function getRefreshToken(): Promise<string | undefined> {
+  return (await cookies()).get(REFRESH_COOKIE)?.value;
+}
+
+export async function startSession(token: AuthToken): Promise<void> {
+  await renewSession(token);
+  (await cookies()).delete(TENANT_COOKIE);
+}
+
+// Keeps the tenant a SuperAdmin has open: unlike a sign-in, the same person carries on.
+export async function renewSession({ accessToken, expiresIn, refreshToken, refreshExpiresIn }: AuthToken): Promise<void> {
   const jar = await cookies();
   jar.set(TOKEN_COOKIE, accessToken, { ...options, maxAge: expiresIn });
-  jar.delete(TENANT_COOKIE);
+  jar.set(REFRESH_COOKIE, refreshToken, { ...options, maxAge: refreshExpiresIn });
 }
 
 export async function endSession(): Promise<void> {
   const jar = await cookies();
   jar.delete(TOKEN_COOKIE);
+  jar.delete(REFRESH_COOKIE);
   jar.delete(TENANT_COOKIE);
 }
 

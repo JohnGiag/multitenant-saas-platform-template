@@ -13,7 +13,7 @@ import { redirect } from 'next/navigation';
 import { apiFailure, publicApi } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
 import { getT } from '@/lib/i18n';
-import { endSession, startSession } from '@/lib/session';
+import { endSession, getRefreshToken, startSession } from '@/lib/session';
 
 // `tenants`: the password matched accounts in several tenants; the form asks which, for this `email`.
 export type SignInState = (NonNullable<FormState> & Partial<TenantChoice> & { email?: string }) | undefined;
@@ -38,6 +38,9 @@ export async function signIn(_: SignInState, form: FormData): Promise<SignInStat
 }
 
 export async function signOut(): Promise<void> {
+  const refreshToken = await getRefreshToken();
+  // Best effort: the API unreachable must not keep anyone signed in on this browser.
+  if (refreshToken) await publicApi('/auth/logout', { method: 'POST', body: { refreshToken } }).catch(() => undefined);
   await endSession();
   redirect('/login');
 }

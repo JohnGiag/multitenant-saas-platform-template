@@ -5,5 +5,5 @@ export interface PasswordResetService {
   // its tenant; nothing when there is none. Callers must not reveal which happened.
   request(email: string): Promise<void>;
   // 'invalid': unknown, used or expired token.
-  confirm(token: string, password: string): Promise<{ tenantId: string; email: string } | 'invalid'>;
+  confirm(token: string, password: string): Promise<{ tenantId: string; userId: string; email: string } | 'invalid'>;
 }

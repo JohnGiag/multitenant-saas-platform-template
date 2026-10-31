@@ -60,6 +60,8 @@ export class PrismaPasswordResetService implements PasswordResetService {
       const { count } = await tx.passwordReset.deleteMany({ where: { id: reset.id, tokenHash } });
       if (count === 0) return 'invalid' as const;
       await tx.user.update({ where: { id: reset.userId }, data: { passwordHash } });
+      // A reset often answers a stolen account: nobody stays signed in with the old password.
+      await tx.authSession.deleteMany({ where: { tenantId: reset.user.tenantId, userId: reset.userId } });
       // A public route, so AuditInterceptor does not see it; recorded in the same commit as the change.
       await tx.auditLog.create({
         data: {
@@ -72,7 +74,7 @@ export class PrismaPasswordResetService implements PasswordResetService {
           status: 204,
         },
       });
-      return { tenantId: reset.user.tenantId, email: reset.user.email };
+      return { tenantId: reset.user.tenantId, userId: reset.userId, email: reset.user.email };
     });
   }
 }

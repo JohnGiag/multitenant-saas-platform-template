@@ -1,5 +1,16 @@
 import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
-import { PrincipalSchema, SignInResultSchema, SignInSchema, type Principal, type SignInDto, type SignInResult } from '@repo/shared-types';
+import {
+  AuthTokenSchema,
+  PrincipalSchema,
+  RefreshTokenSchema,
+  SignInResultSchema,
+  SignInSchema,
+  type AuthToken,
+  type Principal,
+  type RefreshTokenDto,
+  type SignInDto,
+  type SignInResult,
+} from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
@@ -38,6 +49,30 @@ export class AuthController {
     // A TenantChoice also means the password was right.
     await clearAccountAttempts(this.limiter, key, ip);
     return result;
+  }
+
+  @Public()
+  @LocalAuthOnly()
+  @ApiDoc(
+    'Swap a refresh token for a new access and refresh token. Each works once: replaying an old one ends the session (401)',
+    AuthTokenSchema,
+  )
+  @Post('refresh')
+  @HttpCode(200)
+  async refresh(@Body(new ZodValidationPipe(RefreshTokenSchema)) { refreshToken }: RefreshTokenDto): Promise<AuthToken> {
+    const tokens = await this.auth.refresh(refreshToken);
+    if (!tokens) throw new UnauthorizedException('Invalid refresh token');
+    return tokens;
+  }
+
+  // Public: an expired access token must not stop anyone from signing out. The refresh token is the credential.
+  @Public()
+  @LocalAuthOnly()
+  @ApiDoc('Sign out: ends the session of this refresh token, and its access tokens stop working at once')
+  @Post('logout')
+  @HttpCode(204)
+  logout(@Body(new ZodValidationPipe(RefreshTokenSchema)) { refreshToken }: RefreshTokenDto): Promise<void> {
+    return this.auth.signOut(refreshToken);
   }
 
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
