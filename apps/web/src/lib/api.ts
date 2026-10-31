@@ -5,6 +5,8 @@ import {
   type AuthToken,
   type Capability,
   type CapabilityResponse,
+  type FeatureFlag,
+  type FeatureFlagResponse,
   type Principal,
   type Tenant,
 } from '@repo/shared-types';
@@ -136,3 +138,4 @@ export function apiFailure(error: unknown): FormState {
 export const getPrincipal = cache(() => api<Principal>('/auth/me', { ownTenant: true }));
 export const getCurrentTenant = cache(() => api<Tenant>('/tenants/current'));
 export const getCapabilities = cache(async (): Promise<Capability[]> => (await api<CapabilityResponse>('/system/capabilities')).capabilities);
+export const getFeatureFlags = cache(async (): Promise<FeatureFlag[]> => (await api<FeatureFlagResponse>('/feature-flags')).flags);

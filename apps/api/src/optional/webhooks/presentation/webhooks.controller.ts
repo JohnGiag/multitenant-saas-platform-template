@@ -35,9 +35,11 @@ import {
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Roles } from '../../../modules/auth/presentation/decorators.js';
+import { RequireFeature } from '../../../modules/feature-flags/presentation/require-feature.js';
 import { TenantId } from '../../../modules/tenancy/presentation/tenant-context.js';
 import {
   WEBHOOK_SERVICE,
+  WEBHOOKS_FEATURE,
   WebhookInputError,
   WebhookLimitError,
   type WebhookService,
@@ -47,6 +49,7 @@ import {
 // events are the tenant's business data, and the secrets sign in its name).
 @Controller('webhooks')
 @Roles('TenantAdmin')
+@RequireFeature(WEBHOOKS_FEATURE)
 export class WebhooksController {
   constructor(@Inject(WEBHOOK_SERVICE) private readonly webhooks: WebhookService) {}
 

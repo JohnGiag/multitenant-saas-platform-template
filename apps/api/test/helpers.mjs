@@ -107,6 +107,7 @@ export async function cleanup(apps, tenantIds) {
   const tenantId = { in: tenantIds };
   await db.auditLog.deleteMany({ where: { tenantId } });
   await db.tenantIntegration.deleteMany({ where: { tenantId } });
+  await db.tenantFeatureFlag.deleteMany({ where: { tenantId } });
   await db.invitation.deleteMany({ where: { tenantId } });
   await db.apiKey.deleteMany({ where: { tenantId } });
   // Also removes their push devices and password resets (cascade).

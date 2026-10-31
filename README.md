@@ -40,6 +40,7 @@ Tenants, sign-in, roles, API keys, encrypted per-tenant secrets, rate limits, ba
 | **Billing** | Stripe subscriptions set each tenant's tier. Stripe hosts checkout and the customer portal; a cancelled plan stays paid until its period ends. |
 | **File storage** | R2 or any S3-compatible store through presigned URLs, with a per-tenant quota. File bytes never touch the API. |
 | **Audit log** | Every successful write is recorded with its actor and target, and can be filtered by actor, target and time. |
+| **Feature flags** | Each module declares its flags and the lowest tier that gets them; a `SuperAdmin` can override them per tenant. Checked with `@RequireFeature` on routes and `FeatureFlags` in workers. |
 | **Plug-and-play modules** | Optional modules (email, push, storage) are folders: delete one and everything still compiles. |
 | **Deployable** | Docker images for the API (plus a migration job) and the dashboard, with liveness and readiness probes. |
 | **Accessible dashboard** | Next.js App Router with shadcn/ui and Radix. Tested with Playwright, with axe on every page. |
@@ -188,6 +189,7 @@ Access is denied by default: a route answers only the roles it lists, and `Super
 | | `SuperAdmin` | `TenantAdmin` | `User` | `Auditor` |
 |---|:---:|:---:|:---:|:---:|
 | Tenants: create, change tier, delete, open any | ✅ | — | — | — |
+| Feature flags: overrides | ✅ | 👁 | 👁 | 👁 |
 | Rename own tenant | ✅ | ✅ | — | — |
 | Members and invitations | ✅¹ | ✅ | — | 👁 |
 | API keys | — | ✅ | — | 👁 |
@@ -341,6 +343,17 @@ Optional module `webhooks`: a tenant's events, delivered to HTTPS endpoints its 
 - **`GET /v1/system/capabilities`** reports which modules are installed and enabled for the tenant. The dashboard's Settings page shows one tab per module that takes tenant configuration. Known providers (`resend`, `fcm`, `r2`) get a form, and a module added later gets a JSON editor, with no dashboard change.
 - **BYOK secrets** are stored encrypted with AES-256-GCM, with a random IV each time and bound to their tenant and provider. Only masked values ever leave the API. Only providers used by an installed module are accepted.
 
+## Feature flags
+
+A tier is the plan; a flag is one feature, and reads the tier without changing it.
+
+- **Declare a flag in the module that owns it,** so it goes when the module does: `featureFlags: [{ key: 'streaks', minTier: 'pro' }]` in its `index.ts`. `minTier` is the lowest tier that gets it by default; `'free'` means everyone and `null` means nobody until a tenant gets an override (a private beta). Changing a default takes a deploy.
+- **Name it in every language:** a migration adds a `flag.<key>` row per locale, and a test fails without one.
+- **Check it** with `@RequireFeature('streaks')` on a route or controller (`403` while it is off), or `FeatureFlags.isEnabled(tenantId, 'streaks')` in workers and listeners, which have no route. `GET /v1/feature-flags` lists them for any role and API key. `@RequireFeature` only adds a check: `@Roles` still decides who gets in.
+- **A flag with the module's own key gates the whole module:** its capability reports disabled, so the dashboard hides it. The `webhooks` flag works this way, on for every tier: set its `minTier` to `'pro'` to sell webhooks with a plan. While it is off, new events are not delivered; the tenant's endpoints are kept and resume when it comes back. Deliveries already queued still go out.
+- **Overrides beat the tier, both ways,** and survive tier changes, which suits a negotiated deal or a grandfathered tenant. Only a `SuperAdmin` sets them (Settings → Features with the tenant open, or `PUT /v1/feature-flags/:id/on|off` and `DELETE /v1/feature-flags/:id` with `X-Tenant-Id`), since a `TenantAdmin` could otherwise give the tenant paid features. Everyone else sees them read-only.
+- **Changes apply at once:** each check reads the tenant's stored tier and overrides, never the tier in the caller's token.
+
 ## Dashboard
 
 `apps/web`: Next.js (App Router), Tailwind CSS and shadcn/ui (Radix), built to WCAG 2.1/2.2 AA.
@@ -388,6 +401,7 @@ A route without `@ApiDoc` stops the document from building, and a test checks th
 | notifications · push | `/notifications`, `/notifications/stream`, `/push/devices` |
 | storage | `/storage/uploads`, `/storage/downloads`, `/storage/objects` |
 | audit-logs · system | `/audit-logs`, `/system/capabilities` |
+| feature-flags | `/feature-flags` |
 
 **Common status codes:** `400` invalid input · `401` not signed in · `403` not allowed · `404` not found or another tenant's · `409` conflict, or managed in Clerk · `429` rate limited · `502`/`503` an email or storage provider failed or is not configured.
 
@@ -455,7 +469,7 @@ Liveness checks no dependency on purpose: a Postgres or Redis outage should take
 ```
 apps/
   api/                    NestJS API
-    src/modules/          core: auth, tenancy, users, integrations, rate-limit, jobs, notifications, audit, mail, system
+    src/modules/          core: auth, tenancy, users, integrations, rate-limit, jobs, notifications, audit, mail, system, feature-flags
     src/optional/         plug-and-play modules: email, push, storage
     prisma/               schema and migrations
     test/                 unit and end-to-end tests

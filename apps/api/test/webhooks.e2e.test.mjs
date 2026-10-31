@@ -211,6 +211,31 @@ test('a failing receiver gets the event again; one that refuses it sends it to t
   await dlq.close();
 });
 
+test('the webhooks feature gates the whole module: routes, capability and deliveries, and back on the endpoints still work', async () => {
+  const webhooksEnabled = async () => {
+    const { capabilities } = await (await call('GET', '/system/capabilities', { token: tokens.adminB })).json();
+    return capabilities.find((c) => c.key === 'webhooks').enabled;
+  };
+  await endpoint(tokens.adminB, '/gated');
+  assert.equal(await webhooksEnabled(), true);
+
+  assert.equal((await call('PUT', '/feature-flags/webhooks/off', { token: tokens.super, tenant: tenants.b })).status, 204);
+  assert.equal(await webhooksEnabled(), false);
+  assert.equal((await call('GET', '/webhooks', { token: tokens.adminB })).status, 403);
+  assert.equal((await create(tokens.adminB, { url: `${base}/refused` })).status, 403);
+  assert.equal((await createKey(tokens.adminB)).status, 201);
+  // The event another tenant is sent proves the queue has moved on; B's is the one being checked.
+  const before = deliveriesTo('/all').length;
+  await createKey();
+  await lastTo('/all', before + 1);
+  assert.equal(deliveriesTo('/gated').length, 0, 'nothing is delivered while the feature is off');
+
+  assert.equal((await call('DELETE', '/feature-flags/webhooks', { token: tokens.super, tenant: tenants.b })).status, 204);
+  assert.equal(await webhooksEnabled(), true);
+  assert.equal((await createKey(tokens.adminB)).status, 201);
+  assert.equal(JSON.parse((await lastTo('/gated')).body).type, 'api_key.created');
+});
+
 test('tier changes and member changes elsewhere in the API are published too', async () => {
   await endpoint(tokens.adminB, '/tier', { events: ['tenant.tier_changed'] });
   assert.equal((await call('PATCH', `/tenants/${tenants.b}`, { token: tokens.super, body: { tier: 'pro' } })).status, 200);

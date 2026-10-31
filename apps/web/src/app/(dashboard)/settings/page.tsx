@@ -1,10 +1,11 @@
 import type { CursorPage, TenantIntegration } from '@repo/shared-types';
 import { ActionForm } from '@/components/action-form';
+import { FeatureFlagSettings } from '@/components/feature-flag-settings';
 import { Field } from '@/components/field';
 import { IntegrationSettings } from '@/components/integration-settings';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { api, getCapabilities, getCurrentTenant, getPrincipal } from '@/lib/api';
+import { api, getCapabilities, getCurrentTenant, getFeatureFlags, getPrincipal } from '@/lib/api';
 import { CLERK } from '@/lib/auth-mode';
 import { capabilityTitle, configurableCapabilities } from '@/lib/capabilities';
 import { getT, pageTitle } from '@/lib/i18n';
@@ -13,7 +14,7 @@ import { renameTenant } from '../actions';
 export const generateMetadata = pageTitle('nav.settings');
 
 export default async function SettingsPage() {
-  const [me, tenant, capabilities, t] = await Promise.all([getPrincipal(), getCurrentTenant(), getCapabilities(), getT()]);
+  const [me, tenant, capabilities, flags, t] = await Promise.all([getPrincipal(), getCurrentTenant(), getCapabilities(), getFeatureFlags(), getT()]);
   // One tab per installed module the caller may configure; uninstalled modules are simply absent.
   const configurable = configurableCapabilities(capabilities, me.role);
   const integrations = configurable.length
@@ -28,6 +29,7 @@ export default async function SettingsPage() {
       <Tabs defaultValue="general">
         <TabsList aria-label={t('settings.sections')} className="h-auto flex-wrap">
           <TabsTrigger value="general">{t('settings.general')}</TabsTrigger>
+          {flags.length > 0 && <TabsTrigger value="features">{t('settings.features')}</TabsTrigger>}
           {configurable.map((c) => (
             <TabsTrigger key={c.key} value={c.key}>
               {capabilityTitle(c.key)}
@@ -53,6 +55,11 @@ export default async function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        {flags.length > 0 && (
+          <TabsContent value="features">
+            <FeatureFlagSettings flags={flags} tenant={tenant} canOverride={me.role === 'SuperAdmin'} />
+          </TabsContent>
+        )}
         {configurable.map((c) => (
           <TabsContent key={c.key} value={c.key}>
             <IntegrationSettings

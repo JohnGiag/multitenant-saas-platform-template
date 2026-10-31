@@ -45,6 +45,7 @@ model Tenant {
   storageObjects StorageObject[]
   billingAccount BillingAccount?
   webhookEndpoints WebhookEndpoint[]
+  featureFlags   TenantFeatureFlag[]
 
   @@map("tenants")
 }
@@ -95,6 +96,23 @@ model TenantIntegration {
   // Also serves "all integrations of a tenant"; at most one row per provider, so no paging index.
   @@unique([tenantId, provider])
   @@map("tenant_integrations")
+}
+
+// A SuperAdmin's override of a feature flag for one tenant. The flags and their defaults are declared in code.
+model TenantFeatureFlag {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  // Free-form so optional modules can add flags without a migration.
+  key       String
+  enabled   Boolean
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  // Also serves "all overrides of a tenant"; at most one row per flag, so no paging index.
+  @@unique([tenantId, key])
+  @@map("tenant_feature_flags")
 }
 
 model ApiKey {

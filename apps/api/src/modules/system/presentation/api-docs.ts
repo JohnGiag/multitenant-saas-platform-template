@@ -31,11 +31,12 @@ import { API_DOC_KEY, type ApiDocMetadata } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { IS_PUBLIC_KEY, ROLES_KEY, SELF_SERVICE_KEY } from '../../auth/presentation/decorators.js';
 import { LocalAuthOnlyGuard } from '../../auth/presentation/local-auth-only.js';
+import { FEATURE_KEY } from '../../feature-flags/presentation/require-feature.js';
 import { tenantIdOf } from '../../tenancy/presentation/tenant-context.js';
 
 // The OpenAPI document at /docs (Swagger UI) and /docs/openapi.json. Built from what the routes already declare: the
-// Zod schemas their pipes validate with (body, query, path parameters), @Roles/@Public/@LocalAuthOnly (security,
-// roles, X-Tenant-Id) and @HttpCode (status). Only the summary and the response schema are written by hand, in
+// Zod schemas their pipes validate with (body, query, path parameters), @Roles/@Public/@LocalAuthOnly/@RequireFeature
+// (security, roles, X-Tenant-Id) and @HttpCode (status). Only the summary and the response schema are written by hand, in
 // @ApiDoc, and a route without it stops the document from building.
 
 const DESCRIPTION = `
@@ -109,6 +110,7 @@ const TAGS: Record<string, string> = {
   'audit-logs': 'Recorded writes',
   translations: "The dashboard's text in each language",
   system: 'Installed modules',
+  'feature-flags': 'What each tenant may use (SuperAdmin sets overrides)',
 };
 
 // Swagger's decorators append: describe each controller once, even when tests create several apps in one process.
@@ -145,6 +147,7 @@ function describeRoute(controller: Controller, key: string, descriptor: Property
   const roles = meta<Role[]>(ROLES_KEY);
   const guards: unknown[] = [...(Reflect.getMetadata(GUARDS_METADATA, controller) ?? []), ...(Reflect.getMetadata(GUARDS_METADATA, handler) ?? [])];
   const localOnly = guards.includes(LocalAuthOnlyGuard);
+  const feature = meta<string>(FEATURE_KEY);
 
   const decorators: MethodDecorator[] = [];
   let validated = false;
@@ -186,6 +189,7 @@ function describeRoute(controller: Controller, key: string, descriptor: Property
     }
   }
   if (localOnly) notes.push('Local auth mode only: `409` when `AUTH_PROVIDER=clerk`.');
+  if (feature) notes.push(`Needs the \`${feature}\` feature: \`403\` while it is off for the tenant.`);
   decorators.push(ApiOperation({ summary: doc.summary, description: notes.join('\n\n') }));
 
   // Responses.

@@ -13,7 +13,7 @@ type Tenant = { id: string; name: string };
 export interface Fixtures {
   password: string;
   tenants: { platform: Tenant; acme: Tenant; beta: Tenant };
-  emails: Record<'super' | 'admin' | 'member' | 'auditor' | 'multi', string>;
+  emails: Record<'super' | 'admin' | 'member' | 'auditor' | 'multi' | 'betaadmin', string>;
 }
 export type Role = 'super' | 'admin' | 'auditor';
 

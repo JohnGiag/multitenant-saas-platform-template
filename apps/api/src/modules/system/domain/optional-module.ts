@@ -1,4 +1,4 @@
-import type { Capability } from '@repo/shared-types';
+import type { Capability, FeatureFlagDefinition } from '@repo/shared-types';
 
 export const OPTIONAL_MODULES = Symbol('OptionalModules');
 
@@ -20,6 +20,9 @@ export interface OptionalModule {
   // True if, while enabled, the module sets tenants' tiers itself (billing): core then refuses manual tier changes,
   // which the module's next update would silently undo.
   ownsTenantTier?: boolean;
+  // Its feature flags, gone with the module. A flag with the module's own key gates the whole module: while it is off
+  // for a tenant, the capability reports disabled.
+  featureFlags?: FeatureFlagDefinition[];
   // The module's root NestJS module class.
   module: new (...args: any[]) => unknown;
 }
@@ -41,8 +44,13 @@ export function toCapabilities(
   modules: readonly OptionalModule[],
   enabledIntegrations: ReadonlySet<string>,
   setting: PlatformSetting,
+  flagsOff: ReadonlySet<string>,
 ): Capability[] {
   return modules
-    .map((module) => ({ key: module.key, integration: module.integration ?? null, enabled: isEnabled(module, enabledIntegrations, setting) }))
+    .map((module) => ({
+      key: module.key,
+      integration: module.integration ?? null,
+      enabled: !flagsOff.has(module.key) && isEnabled(module, enabledIntegrations, setting),
+    }))
     .sort((a, b) => a.key.localeCompare(b.key));
 }

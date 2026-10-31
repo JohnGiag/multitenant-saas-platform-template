@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { expectAccessible, fixtures, sessionFile } from './fixtures';
+import { expectAccessible, fixtures, sessionFile, signIn } from './fixtures';
 
 async function createApiKey(page: Page, name: string): Promise<string> {
   await page.goto('/api-keys');
@@ -111,6 +111,54 @@ test.describe('Webhooks', () => {
       await expect(page.getByRole('heading', { level: 2, name: 'Endpoints' })).toBeVisible();
       await expect(page.getByRole('button', { name: /Add endpoint|Delete|Turn off|Rotate/ })).toHaveCount(0);
     });
+  });
+});
+
+test.describe('Feature flags', () => {
+  test.use({ storageState: sessionFile('super') });
+
+  // On Beta, so Acme's webhook tests never see the feature go away.
+  test('a SuperAdmin turns a feature off for a tenant; its admin loses it, sees why, and cannot change it', async ({ page, browser, baseURL }) => {
+    const { tenants, emails } = fixtures();
+    await page.goto('/tenants');
+    await page.getByRole('button', { name: `Open ${tenants.beta.name}` }).click();
+    await expect(page.getByRole('heading', { level: 2, name: tenants.beta.name })).toBeVisible();
+
+    const setOverride = async (choice: string) => {
+      await page.goto('/settings');
+      await page.getByRole('tab', { name: 'Features' }).click();
+      const panel = page.getByRole('tabpanel');
+      await expect(panel.getByText(tenants.beta.name)).toBeVisible();
+      await panel.getByRole('combobox', { name: 'Override for Webhooks' }).click();
+      await page.getByRole('option', { name: choice }).click();
+      await panel.getByRole('button', { name: 'Save' }).click();
+      await expect(panel.getByText('Saved')).toBeVisible();
+      return panel;
+    };
+
+    const panel = await setOverride('Always off');
+    await expect(panel.getByText('Off', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Set by the platform for this tenant')).toBeVisible();
+    await expectAccessible(page);
+
+    const admin = await (await browser.newContext({ baseURL })).newPage();
+    await signIn(admin, emails.betaadmin);
+    await expect(admin.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
+    await expect(admin.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Webhooks' })).toHaveCount(0);
+    expect((await admin.goto('/webhooks'))?.status()).toBe(404);
+
+    await admin.goto('/settings');
+    await admin.getByRole('tab', { name: 'Features' }).click();
+    const seen = admin.getByRole('tabpanel');
+    await expect(seen.getByText('Off', { exact: true })).toBeVisible();
+    await expect(seen.getByRole('combobox')).toHaveCount(0);
+    await expect(seen.getByRole('button')).toHaveCount(0);
+    await expectAccessible(admin);
+
+    const restored = await setOverride('Plan default');
+    await expect(restored.getByText('Included in every plan')).toBeVisible();
+    expect((await admin.goto('/webhooks'))?.status()).toBe(200);
+    await admin.context().close();
   });
 });
 

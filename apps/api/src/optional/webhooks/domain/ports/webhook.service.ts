@@ -9,6 +9,8 @@ import type {
 } from '@repo/shared-types';
 
 export const WEBHOOK_SERVICE = Symbol('WebhookService');
+// Named after the module, so it gates the whole of it (see OptionalModule.featureFlags).
+export const WEBHOOKS_FEATURE = 'webhooks';
 
 // Enough for a few systems per tenant; each one multiplies every event's deliveries.
 export const MAX_ENDPOINTS_PER_TENANT = 10;

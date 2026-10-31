@@ -62,10 +62,11 @@ export class PrismaTenantRepository implements TenantRepository {
     // First, while the tenant's secrets still exist: a hook that fails leaves the tenant for a retry.
     await this.deletionHooks.run(id);
     const where = { tenantId: id };
-    const [, , , , , { count }] = await this.prisma.$transaction([
+    const [, , , , , , { count }] = await this.prisma.$transaction([
       // Its members' own actions; what a SuperAdmin did to it stays in the SuperAdmin's tenant.
       this.prisma.auditLog.deleteMany({ where }),
       this.prisma.tenantIntegration.deleteMany({ where }),
+      this.prisma.tenantFeatureFlag.deleteMany({ where }),
       this.prisma.apiKey.deleteMany({ where }),
       this.prisma.invitation.deleteMany({ where }),
       // Also removes their push devices, password resets and sessions (cascade).

@@ -27,11 +27,12 @@ async function seed(runId) {
   const platform = await tenant('E2E Platform', [['super', 'SuperAdmin']]);
   // `multi` has accounts in both tenants with the same password: sign-in asks which tenant.
   const acme = await tenant('E2E Acme', [['admin', 'TenantAdmin'], ['member', 'User'], ['auditor', 'Auditor'], ['multi', 'User']]);
-  const beta = await tenant('E2E Beta', [['multi', 'User']]);
+  // betaadmin: the feature flag test turns webhooks off for Beta, so it cannot disturb Acme's webhook tests.
+  const beta = await tenant('E2E Beta', [['multi', 'User'], ['betaadmin', 'TenantAdmin']]);
   return {
     password: PASSWORD,
     tenants: { platform, acme, beta },
-    emails: Object.fromEntries(['super', 'admin', 'member', 'auditor', 'multi'].map((local) => [local, email(local)])),
+    emails: Object.fromEntries(['super', 'admin', 'member', 'auditor', 'multi', 'betaadmin'].map((local) => [local, email(local)])),
   };
 }
 
@@ -41,6 +42,7 @@ async function cleanup(tenantIds) {
   await db.$transaction([
     db.auditLog.deleteMany({ where }),
     db.tenantIntegration.deleteMany({ where }),
+    db.tenantFeatureFlag.deleteMany({ where }),
     db.apiKey.deleteMany({ where }),
     db.invitation.deleteMany({ where }),
     db.user.deleteMany({ where }),

@@ -1,12 +1,15 @@
 'use server';
 
-import { IdSchema, IntegrationProviderSchema, UpdateTenantSchema, UpsertTenantIntegrationSchema } from '@repo/shared-types';
+import { FeatureFlagKeySchema, IdSchema, IntegrationProviderSchema, UpdateTenantSchema, UpsertTenantIntegrationSchema } from '@repo/shared-types';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import { api, apiFailure } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
 import { getT } from '@/lib/i18n';
 import { INTEGRATION_FIELDS } from '@/lib/integration-fields';
 import { setTenantOverride } from '@/lib/session';
+
+const OverrideSchema = z.enum(['default', 'on', 'off']);
 
 // null: back to the caller's own tenant. The API refuses X-Tenant-Id from anyone but a SuperAdmin.
 export async function switchTenant(tenantId: string | null): Promise<void> {
@@ -19,6 +22,20 @@ export async function renameTenant(_: FormState, form: FormData): Promise<FormSt
   if (!parsed.success) return invalid(parsed.error);
   try {
     await api('/tenants/current', { method: 'PATCH', body: parsed.data });
+  } catch (error) {
+    return apiFailure(error);
+  }
+  revalidatePath('/', 'layout');
+  return { success: (await getT())('common.saved') };
+}
+
+// The tenant is the one the dashboard has open: api() sends it as X-Tenant-Id, and the API takes this from a SuperAdmin only.
+export async function saveFeatureFlag(key: string, _: FormState, form: FormData): Promise<FormState> {
+  const parsed = OverrideSchema.safeParse(form.get('override'));
+  if (!parsed.success) return invalid(parsed.error);
+  const path = `/feature-flags/${FeatureFlagKeySchema.parse(key)}`;
+  try {
+    await (parsed.data === 'default' ? api(path, { method: 'DELETE' }) : api(`${path}/${parsed.data}`, { method: 'PUT' }));
   } catch (error) {
     return apiFailure(error);
   }

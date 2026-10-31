@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { IntegrationProviderSchema } from '@repo/shared-types';
+import { FeatureFlagDefinitionSchema, IntegrationProviderSchema } from '@repo/shared-types';
 import { z } from 'zod';
 import type { OptionalModule } from '../domain/optional-module.js';
 
@@ -18,14 +18,16 @@ const DescriptorSchema = z.object({
     .custom<NonNullable<OptionalModule['platformReady']>>((value) => typeof value === 'function')
     .optional(),
   ownsTenantTier: z.boolean().optional(),
+  featureFlags: z.array(FeatureFlagDefinitionSchema).optional(),
   module: z.custom<OptionalModule['module']>((value) => typeof value === 'function'),
 });
 
 // Imports every <dir>/<name>/index.js. A missing folder means "not installed"; a broken one
-// (no index.js, bad export, duplicate key) stops startup rather than silently disappearing.
+// (no index.js, bad export, duplicate module or flag key) stops startup rather than silently disappearing.
 export async function loadOptionalModules(dir = DEFAULT_DIR): Promise<OptionalModule[]> {
   if (!existsSync(dir)) return [];
   const modules: OptionalModule[] = [];
+  const flagKeys = new Set<string>();
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const entryFile = join(dir, entry.name, 'index.js');
@@ -38,6 +40,10 @@ export async function loadOptionalModules(dir = DEFAULT_DIR): Promise<OptionalMo
     }
     if (modules.some((m) => m.key === parsed.data.key)) {
       throw new Error(`Optional module key "${parsed.data.key}" is declared twice`);
+    }
+    for (const { key } of parsed.data.featureFlags ?? []) {
+      if (flagKeys.has(key)) throw new Error(`Feature flag "${key}" is declared twice`);
+      flagKeys.add(key);
     }
     modules.push(parsed.data);
   }

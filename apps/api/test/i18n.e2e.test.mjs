@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { LOCALES, TranslationsSchema } from '@repo/shared-types';
+import { loadOptionalModules } from '../dist/modules/system/infrastructure/optional-module-loader.js';
 import { cleanup, db, startApp } from './helpers.mjs';
 
 // A key only English has, to see the fallback.
@@ -37,6 +38,15 @@ test('every language has every English key, so none shows English by accident', 
   const keys = (locale) => rows.filter((r) => r.locale === locale).map((r) => r.key).sort();
   assert.ok(keys('en').length > 0);
   for (const locale of LOCALES) assert.deepEqual(keys(locale), keys('en'), `${locale} differs from en`);
+});
+
+test("every installed module's feature flags have a name in every language", async () => {
+  const keys = (await loadOptionalModules()).flatMap((m) => m.featureFlags ?? []).map((f) => `flag.${f.key}`);
+  assert.ok(keys.length > 0);
+  for (const locale of LOCALES) {
+    const text = await messages(locale);
+    for (const key of keys) assert.ok(text[key], `${locale} has no ${key}`);
+  }
 });
 
 test('a key a language lacks falls back to English', async () => {

@@ -6,7 +6,7 @@ import { expectAccessible, sessionFile, type Role } from './fixtures';
 const PAGES: Record<Role, string[]> = {
   admin: ['/', '/users', '/api-keys', '/files', '/billing', '/billing?checkout_session=cs_test_e2e', '/webhooks', '/notifications', '/audit', '/settings', '/account'],
   auditor: ['/users', '/api-keys', '/audit', '/settings', '/billing', '/webhooks'],
-  super: ['/tenants', '/users', '/audit'],
+  super: ['/tenants', '/users', '/audit', '/settings'],
 };
 
 test.describe('signed out', () => {

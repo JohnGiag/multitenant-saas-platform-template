@@ -17,10 +17,12 @@ import { toCursorPage } from '../../../common/cursor-page.js';
 import type { WebhookEndpoint as EndpointRow } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { TenantEvents, type TenantEvent } from '../../../modules/events/domain/tenant-events.js';
+import { FeatureFlags } from '../../../modules/feature-flags/domain/feature-flags.js';
 import { parseMasterKey, sealSecret } from '../../../modules/integrations/domain/secret-box.js';
 import { DELIVERY_ATTEMPTS, endpointUrlProblem } from '../domain/delivery-policy.js';
 import {
   MAX_ENDPOINTS_PER_TENANT,
+  WEBHOOKS_FEATURE,
   WebhookInputError,
   WebhookLimitError,
   type WebhookService,
@@ -59,6 +61,7 @@ export class PrismaWebhookService implements WebhookService, OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: TenantEvents,
+    private readonly flags: FeatureFlags,
     @InjectQueue(WEBHOOKS_QUEUE) private readonly queue: Queue<WebhookDeliveryJob>,
     config: ConfigService,
   ) {
@@ -136,6 +139,7 @@ export class PrismaWebhookService implements WebhookService, OnModuleInit {
 
   // Every enabled endpoint of the tenant that wants this event type gets its own delivery job.
   private async fanOut(event: TenantEvent): Promise<void> {
+    if (!(await this.flags.isEnabled(event.tenantId, WEBHOOKS_FEATURE))) return;
     const endpoints = await this.prisma.webhookEndpoint.findMany({
       where: { tenantId: event.tenantId, enabled: true, OR: [{ events: { isEmpty: true } }, { events: { has: event.type } }] },
       select: { id: true },

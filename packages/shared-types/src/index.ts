@@ -5,6 +5,7 @@ export * from './user.js';
 export * from './invitation.js';
 export * from './integration.js';
 export * from './capability.js';
+export * from './feature-flag.js';
 export * from './auth.js';
 export * from './notification.js';
 export * from './storage.js';

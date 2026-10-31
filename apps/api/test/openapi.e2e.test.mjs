@@ -55,6 +55,13 @@ test('request schemas come from the Zod pipes that validate them', () => {
   assert.ok(params(op('get', '/v1/storage/downloads'), 'query').key.required);
 });
 
+test('routes behind a feature flag say so', () => {
+  assert.match(op('get', '/v1/webhooks').description, /`webhooks` feature/);
+  assert.doesNotMatch(op('get', '/v1/users').description, /feature/);
+  assert.deepEqual(op('put', '/v1/feature-flags/{id}/on')['x-roles'], ['SuperAdmin']);
+  assert.ok(params(op('put', '/v1/feature-flags/{id}/on'), 'header')['X-Tenant-Id']);
+});
+
 test('responses, credentials and headers follow the routes', () => {
   const page = op('get', '/v1/users').responses['200'].content['application/json'].schema;
   assert.deepEqual(page.required, ['items', 'nextCursor']);

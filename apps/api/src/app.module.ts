@@ -8,6 +8,7 @@ import { AuditModule } from './modules/audit/audit.module.js';
 import { AuditInterceptor } from './modules/audit/presentation/audit.interceptor.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { EventsModule } from './modules/events/events.module.js';
+import { FeatureFlagsModule } from './modules/feature-flags/feature-flags.module.js';
 import { AccessGuard } from './modules/auth/presentation/access.guard.js';
 import { AuthGuard } from './modules/auth/presentation/auth.guard.js';
 import { I18nModule } from './modules/i18n/i18n.module.js';
@@ -42,6 +43,7 @@ export class AppModule {
         NotificationsModule,
         AuditModule,
         I18nModule,
+        FeatureFlagsModule,
         SystemModule.register(optionalModules),
         ...optionalModules.map((m) => m.module),
       ],
