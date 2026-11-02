@@ -33,6 +33,7 @@ import { scopeFor } from '../../auth/domain/access-policy.js';
 import { IS_PUBLIC_KEY, ROLES_KEY, SCOPE_KEY, SELF_SERVICE_KEY } from '../../auth/presentation/decorators.js';
 import { LocalAuthOnlyGuard } from '../../auth/presentation/local-auth-only.js';
 import { FEATURE_KEY } from '../../feature-flags/presentation/require-feature.js';
+import { IDEMPOTENT_KEY } from '../../idempotency/presentation/idempotency.guard.js';
 import { LIVE_ONLY_KEY, tenantIdOf } from '../../tenancy/presentation/tenant-context.js';
 
 // The OpenAPI document at /docs (Swagger UI) and /docs/openapi.json. Built from what the routes already declare: the
@@ -149,6 +150,7 @@ function describeRoute(controller: Controller, key: string, descriptor: Property
   const guards: unknown[] = [...(Reflect.getMetadata(GUARDS_METADATA, controller) ?? []), ...(Reflect.getMetadata(GUARDS_METADATA, handler) ?? [])];
   const localOnly = guards.includes(LocalAuthOnlyGuard);
   const feature = meta<string>(FEATURE_KEY);
+  const idempotent = Reflect.getMetadata(IDEMPOTENT_KEY, handler) !== undefined;
 
   const decorators: MethodDecorator[] = [];
   let validated = false;
@@ -195,6 +197,9 @@ function describeRoute(controller: Controller, key: string, descriptor: Property
       decorators.push(ApiHeader({ name: 'X-Sandbox', required: false, description: "`true`: a signed-in member acts on the tenant's test data. API keys carry their mode in the key instead." }));
     }
   }
+  if (idempotent) {
+    decorators.push(ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Retries with the same key get the first response instead of a second change, for 24 hours.' }));
+  }
   if (localOnly) notes.push('Local auth mode only: `409` when `AUTH_PROVIDER=clerk`.');
   if (feature) notes.push(`Needs the \`${feature}\` feature: \`403\` while it is off for the tenant.`);
   decorators.push(ApiOperation({ summary: doc.summary, description: notes.join('\n\n') }));
@@ -219,6 +224,7 @@ function describeRoute(controller: Controller, key: string, descriptor: Property
   if (validated) decorators.push(error(400, 'Invalid input'));
   if (!isPublic) decorators.push(error(401, 'Missing, invalid or expired credentials'), error(403, 'Role not allowed on this route, or another tenant'));
   if (localOnly) decorators.push(error(409, 'Managed in Clerk for this deployment'));
+  if (idempotent) decorators.push(error(409, 'A request with this key is still running, or its response cannot be repeated'), error(422, 'This key was used for a different request'));
   decorators.push(
     error(429, 'Rate limited', { headers: { 'Retry-After': { description: 'Seconds until a request is allowed again', schema: { type: 'integer' } } } }),
   );

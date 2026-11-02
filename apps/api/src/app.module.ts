@@ -9,6 +9,9 @@ import { AuditInterceptor } from './modules/audit/presentation/audit.interceptor
 import { AuthModule } from './modules/auth/auth.module.js';
 import { ApiScopesModule } from './modules/auth/api-scopes.module.js';
 import { EventsModule } from './modules/events/events.module.js';
+import { IdempotencyModule } from './modules/idempotency/idempotency.module.js';
+import { IdempotencyGuard } from './modules/idempotency/presentation/idempotency.guard.js';
+import { IdempotencyInterceptor } from './modules/idempotency/presentation/idempotency.interceptor.js';
 import { FeatureFlagsModule } from './modules/feature-flags/feature-flags.module.js';
 import { AccessGuard } from './modules/auth/presentation/access.guard.js';
 import { AuthGuard } from './modules/auth/presentation/auth.guard.js';
@@ -39,6 +42,7 @@ export class AppModule {
         AuthModule,
         RateLimitModule,
         TenancyModule,
+        IdempotencyModule,
         UsersModule,
         IntegrationsModule,
         JobsModule,
@@ -57,6 +61,8 @@ export class AppModule {
         { provide: APP_GUARD, useExisting: RateLimitGuard },
         { provide: APP_GUARD, useExisting: AccessGuard },
         { provide: APP_GUARD, useExisting: TenantContextGuard },
+        { provide: APP_GUARD, useExisting: IdempotencyGuard },
+        { provide: APP_INTERCEPTOR, useExisting: IdempotencyInterceptor },
         // Records successful writes; it never rejects, so it is an interceptor, not a guard.
         { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
       ],

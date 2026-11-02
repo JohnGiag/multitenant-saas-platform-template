@@ -29,6 +29,7 @@ import { z } from 'zod';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { keysetCursorSchema } from '../../../common/keyset.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
+import { Idempotent } from '../../idempotency/presentation/idempotency.guard.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { ApiScopes } from '../domain/api-scopes.js';
 import { API_KEY_SERVICE, type ApiKeyService } from '../domain/ports/api-key.port.js';
@@ -64,6 +65,7 @@ export class ApiKeysController {
   }
 
   @ApiDoc('Create an API key: `key` is returned this once, only its hash is stored', CreatedApiKeySchema)
+  @Idempotent({ secret: true })
   @Post()
   async create(
     @TenantId() tenantId: string,

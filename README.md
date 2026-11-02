@@ -217,6 +217,7 @@ Access is denied by default: a route answers only the roles it lists, and `Super
 - **Revocation is immediate.** Each request checks short-lived Redis keys, so these stop existing access tokens at once: signing out or a replay (that session), a password change or reset (every session of the account), a role change or removal (the user, who keeps the session and refreshes into the new role), a tier change or a deleted tenant (everyone in it). While Redis is down the check is skipped, and tokens simply run out within 15 minutes.
 - **API keys** (`X-API-Key: <key>`) are for a tenant's own servers and scripts. Not to be confused with the BYOK keys under Settings.
 - **Scopes** limit a key below its role. Core has `read` and `write`; a module declares more with `ApiScopes.declare('ingest')` and opens a route with `@RequireScope('ingest')`. A route without `@RequireScope` is closed to keys. Scopes never widen a role.
+- **Safe retries:** routes that create something accept an `Idempotency-Key` header. A retry with the same key gets the first response back, for 24 hours; a response that held a secret shown once answers `409` instead of repeating it.
 - **Test mode:** the dashboard's Test mode button works on the tenant's sandbox, and keys made there start with `sk_test_`. Live and test data never mix. API callers signed in as a member send `X-Sandbox: true`. Invitations and billing are live only.
 
 ### Users and invitations

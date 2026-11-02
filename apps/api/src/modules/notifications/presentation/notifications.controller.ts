@@ -21,6 +21,7 @@ import { ApiDoc } from '../../../common/api-doc.js';
 import { unavailableOnTimeout } from '../../../common/unavailable-on-timeout.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { CurrentPrincipal, RequireScope, Roles } from '../../auth/presentation/decorators.js';
+import { Idempotent } from '../../idempotency/presentation/idempotency.guard.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { NOTIFICATION_SERVICE, type NotificationService } from '../domain/ports/notification.service.js';
 
@@ -35,6 +36,7 @@ export class NotificationsController {
     'Send a notification to a member: in real time, and queued for each email or push channel the tenant has set up',
     SendNotificationResultSchema,
   )
+  @Idempotent()
   @Post()
   @HttpCode(202)
   async send(

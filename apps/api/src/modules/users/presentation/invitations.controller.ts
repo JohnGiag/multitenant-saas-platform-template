@@ -30,6 +30,7 @@ import {
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Public, RequireScope, Roles } from '../../auth/presentation/decorators.js';
+import { Idempotent } from '../../idempotency/presentation/idempotency.guard.js';
 import { LiveOnly, TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { INVITATION_SERVICE, type InvitationService } from '../domain/ports/invitation.service.js';
 import { rethrowMailError } from './mail-errors.js';
@@ -59,6 +60,7 @@ export class InvitationsController {
     'Invite someone: emails a single-use link valid for 7 days, always with the platform credentials. Re-inviting the same email replaces the pending invitation',
     InvitationSchema,
   )
+  @Idempotent()
   @Post()
   async invite(
     @TenantId() tenantId: string,

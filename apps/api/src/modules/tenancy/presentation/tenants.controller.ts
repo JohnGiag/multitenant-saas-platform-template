@@ -34,6 +34,7 @@ import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { RequireScope, Roles } from '../../auth/presentation/decorators.js';
 import { OPTIONAL_MODULES, tierIsManaged, type OptionalModule } from '../../system/domain/optional-module.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../domain/ports/tenant.repository.js';
+import { Idempotent } from '../../idempotency/presentation/idempotency.guard.js';
 import { TenantId } from './tenant-context.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 
@@ -69,6 +70,7 @@ export class TenantsController {
   @Roles('SuperAdmin')
   @LocalAuthOnly()
   @ApiDoc('Create a tenant (free tier); invite its first TenantAdmin next', TenantSchema)
+  @Idempotent()
   @Post()
   create(@Body(new ZodValidationPipe(CreateTenantSchema)) body: CreateTenantDto): Promise<Tenant> {
     return this.tenants.create(body);

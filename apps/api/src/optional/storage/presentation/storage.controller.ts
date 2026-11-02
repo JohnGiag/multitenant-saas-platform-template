@@ -32,6 +32,7 @@ import {
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { CurrentPrincipal, RequireScope, Roles } from '../../../modules/auth/presentation/decorators.js';
+import { Idempotent } from '../../../modules/idempotency/presentation/idempotency.guard.js';
 import { TenantId } from '../../../modules/tenancy/presentation/tenant-context.js';
 import { isTenantObjectKey, newObjectKey } from '../domain/object-key.js';
 import {
@@ -58,6 +59,7 @@ export class StorageController {
     'Get a presigned upload URL valid for 15 minutes: PUT exactly `size` bytes to it (at most 1 MB). Counts against the platform quota (409 when full)',
     PresignedUploadSchema,
   )
+  @Idempotent({ secret: true })
   @Post('uploads')
   async upload(
     @TenantId() tenantId: string,

@@ -55,6 +55,7 @@ model Tenant {
   webhookEndpoints WebhookEndpoint[]
   featureFlags   TenantFeatureFlag[]
   outboxEvents   OutboxEvent[]
+  idempotencyKeys IdempotencyKey[]
 
   @@map("tenants")
 }
@@ -331,6 +332,27 @@ model OutboxEvent {
   // Not led by tenant_id: the relay looks for due events before it knows any tenant.
   @@index([nextAttemptAt, id])
   @@map("outbox_events")
+}
+
+// Requests sent with an Idempotency-Key, kept for 24 hours so a retry gets the first response instead of a second change.
+model IdempotencyKey {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  key          String
+  principalId  String   @map("principal_id") @db.Uuid
+  // SHA-256 of the method, path and body, so the same key on a different request is refused.
+  requestHash  String   @map("request_hash")
+  // in_progress, done, or secret: finished, with a response that was shown once and so is not stored.
+  status       String
+  responseBody Json?    @map("response_body")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, key])
+  // For the retention sweep, which works by age alone.
+  @@index([createdAt])
+  @@map("idempotency_keys")
 }
 
 // Where a tenant's events are delivered, used by the optional webhooks module (src/optional/webhooks).

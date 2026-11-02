@@ -37,6 +37,7 @@ import { unavailableOnTimeout } from '../../../common/unavailable-on-timeout.js'
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { RequireScope, Roles } from '../../../modules/auth/presentation/decorators.js';
 import { RequireFeature } from '../../../modules/feature-flags/presentation/require-feature.js';
+import { Idempotent } from '../../../modules/idempotency/presentation/idempotency.guard.js';
 import { TenantId } from '../../../modules/tenancy/presentation/tenant-context.js';
 import {
   WEBHOOK_SERVICE,
@@ -76,6 +77,7 @@ export class WebhooksController {
     'Add an endpoint (https only). `secret` is returned this once: verify each delivery with it (Standard Webhooks). At most 10 per tenant',
     CreatedWebhookEndpointSchema,
   )
+  @Idempotent({ secret: true })
   @Post()
   create(
     @TenantId() tenantId: string,
