@@ -9,12 +9,13 @@ import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js'
 import { REDIS_CLIENT } from '../../../infrastructure/redis/redis.module.js';
 import { openSecret, parseMasterKey } from '../../../modules/integrations/domain/secret-box.js';
 import { DeadLetteringWorker, type DeadLetterRecord } from '../../../modules/jobs/dead-lettering.worker.js';
+import { partitionNames } from '../../../modules/jobs/job-config.js';
 import { deadLetterQueueName } from '../../../modules/jobs/jobs.module.js';
 import { TenantDeletionHooks } from '../../../modules/tenancy/domain/tenant-deletion-hooks.js';
 import { isRetryableStatus, retryDelay } from '../domain/delivery-policy.js';
 import { signWebhook } from '../domain/standard-webhooks.js';
 import { BlockedAddressError, deliveryError, postWebhook } from './https-delivery.js';
-import { secretContext, WEBHOOKS_QUEUE, type WebhookDeliveryJob } from './prisma-webhook.service.js';
+import { secretContext, WEBHOOKS_PARTITIONS, WEBHOOKS_QUEUE, type WebhookDeliveryJob } from './prisma-webhook.service.js';
 import { allowPrivateTargets } from './webhooks-config.js';
 
 type Result = 'delivered' | 'skipped';
@@ -25,17 +26,15 @@ interface Attempt {
   startedAt: number;
 }
 
-// The schedule of jobs queued with backoff type "webhook" (delivery-policy.ts).
-@Processor(WEBHOOKS_QUEUE, { settings: { backoffStrategy: (attemptsMade: number) => retryDelay(attemptsMade) } })
-export class WebhooksWorker extends DeadLetteringWorker<WebhookDeliveryJob> {
+abstract class WebhooksWorker extends DeadLetteringWorker<WebhookDeliveryJob> {
   private readonly masterKey: Uint8Array;
   private readonly allowPrivate: boolean;
 
   constructor(
-    @InjectQueue(WEBHOOKS_QUEUE) queue: Queue<WebhookDeliveryJob>,
-    @InjectQueue(deadLetterQueueName(WEBHOOKS_QUEUE)) dlq: Queue<DeadLetterRecord<WebhookDeliveryJob>>,
+    queue: Queue<WebhookDeliveryJob>,
+    dlq: Queue<DeadLetterRecord<WebhookDeliveryJob>>,
     config: ConfigService,
-    @Inject(REDIS_CLIENT) redis: Redis,
+    redis: Redis,
     deletionHooks: TenantDeletionHooks,
     private readonly prisma: PrismaService,
   ) {
@@ -103,3 +102,22 @@ export class WebhooksWorker extends DeadLetteringWorker<WebhookDeliveryJob> {
       .catch((err: unknown) => this.logger.error(`Delivery log failed for endpoint ${endpointId}: ${err instanceof Error ? err.message : String(err)}`));
   }
 }
+
+// One worker per partition, each with its own slots, so a full partition cannot take another's.
+export const WEBHOOKS_WORKERS = partitionNames(WEBHOOKS_QUEUE, WEBHOOKS_PARTITIONS).map((name) => {
+  // The schedule of jobs queued with backoff type "webhook" (delivery-policy.ts).
+  @Processor(name, { settings: { backoffStrategy: (attemptsMade: number) => retryDelay(attemptsMade) } })
+  class PartitionWorker extends WebhooksWorker {
+    constructor(
+      @InjectQueue(name) queue: Queue<WebhookDeliveryJob>,
+      @InjectQueue(deadLetterQueueName(name)) dlq: Queue<DeadLetterRecord<WebhookDeliveryJob>>,
+      config: ConfigService,
+      @Inject(REDIS_CLIENT) redis: Redis,
+      deletionHooks: TenantDeletionHooks,
+      prisma: PrismaService,
+    ) {
+      super(queue, dlq, config, redis, deletionHooks, prisma);
+    }
+  }
+  return PartitionWorker;
+});

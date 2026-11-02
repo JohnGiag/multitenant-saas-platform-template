@@ -36,6 +36,7 @@ process.env.QUEUE_PREFIX = QUEUE_PREFIX;
 // Captured now: a test may point the app at an unreachable Redis afterwards.
 export const QUEUE_CONNECTION = { url: process.env.REDIS_URL };
 export const testQueue = (name) => new Queue(name, { connection: QUEUE_CONNECTION, prefix: QUEUE_PREFIX });
+export const WEBHOOK_QUEUES = Array.from({ length: 8 }, (_, i) => `webhooks-${i}`);
 
 export const PASSWORD = 'correct horse battery staple';
 export const FIXTURES = join(import.meta.dirname, 'fixtures');
@@ -100,7 +101,7 @@ export async function waitFor(check, timeoutMs = 10_000) {
 
 export async function cleanup(apps, tenantIds) {
   for (const app of [apps].flat()) await app?.close();
-  for (const name of ['notifications', 'notifications-dlq', 'tenant-events', 'tenant-events-dlq']) {
+  for (const name of ['notifications', 'tenant-events', ...WEBHOOK_QUEUES].flatMap((queue) => [queue, `${queue}-dlq`])) {
     const queue = testQueue(name);
     await queue.obliterate({ force: true }).catch(() => {});
     await queue.close();

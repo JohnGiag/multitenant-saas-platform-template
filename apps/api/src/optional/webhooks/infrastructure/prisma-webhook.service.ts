@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   CreatedWebhookEndpoint,
@@ -14,7 +13,6 @@ import type {
   WebhookPayload,
   WebhookSecret,
 } from '@repo/shared-types';
-import type { Queue } from 'bullmq';
 import { toCursorPage } from '../../../common/cursor-page.js';
 import { keysetArgs, keysetPage, type KeysetCursor } from '../../../common/keyset.js';
 import { RetentionSweep } from '../../../common/retention-sweep.js';
@@ -25,6 +23,7 @@ import { TenantEvents, type TenantEvent } from '../../../modules/events/domain/t
 import { FeatureFlags } from '../../../modules/feature-flags/domain/feature-flags.js';
 import { parseMasterKey, sealSecret } from '../../../modules/integrations/domain/secret-box.js';
 import { QUEUE_TIMEOUT_MS } from '../../../modules/jobs/job-config.js';
+import { partitionedQueuesToken, type PartitionedQueues } from '../../../modules/jobs/jobs.module.js';
 import { DELIVERY_ATTEMPTS, endpointUrlProblem } from '../domain/delivery-policy.js';
 import {
   MAX_ENDPOINTS_PER_TENANT,
@@ -37,6 +36,8 @@ import { newWebhookSecret } from '../domain/standard-webhooks.js';
 import { allowPrivateTargets } from './webhooks-config.js';
 
 export const WEBHOOKS_QUEUE = 'webhooks';
+// A slow receiver holds a worker slot for up to a timeout: partitions keep one tenant's backlog from everyone else's.
+export const WEBHOOKS_PARTITIONS = 8;
 
 // One delivery: an event to one endpoint. The endpoint (and its secret) is loaded when the job runs, so a rotated
 // secret or a changed URL applies to deliveries still waiting.
@@ -95,7 +96,7 @@ export class PrismaWebhookService implements WebhookService, OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly events: TenantEvents,
     private readonly flags: FeatureFlags,
-    @InjectQueue(WEBHOOKS_QUEUE) private readonly queue: Queue<WebhookDeliveryJob>,
+    @Inject(partitionedQueuesToken(WEBHOOKS_QUEUE)) private readonly queues: PartitionedQueues<WebhookDeliveryJob>,
     config: ConfigService,
   ) {
     this.masterKey = parseMasterKey(config.getOrThrow<string>('BYOK_MASTER_KEY'));
@@ -190,7 +191,7 @@ export class PrismaWebhookService implements WebhookService, OnModuleInit {
     const payload = delivery.payload as unknown as WebhookPayload;
     // A job id of its own, or BullMQ would ignore it as the job already done. The payload keeps the webhook-id.
     const job = { jobId: `${eventId}-${endpointId}-${randomUUID()}`, attempts: DELIVERY_ATTEMPTS, backoff: { type: 'webhook' } };
-    await withTimeout(this.queue.add(eventType, { tenantId, endpointId, payload }, job), QUEUE_TIMEOUT_MS, 'Queueing a webhook delivery');
+    await withTimeout(this.queues.for(tenantId).add(eventType, { tenantId, endpointId, payload }, job), QUEUE_TIMEOUT_MS, 'Queueing a webhook delivery');
     return 'queued';
   }
 
@@ -220,7 +221,7 @@ export class PrismaWebhookService implements WebhookService, OnModuleInit {
       // event and endpoint, so an event queued twice is delivered once.
       opts: { jobId: `${event.id}-${endpointId}`, attempts: DELIVERY_ATTEMPTS, backoff: { type: 'webhook' } },
     }));
-    await withTimeout(this.queue.addBulk(jobs), QUEUE_TIMEOUT_MS, 'Queueing a webhook delivery');
+    await withTimeout(this.queues.for(event.tenantId).addBulk(jobs), QUEUE_TIMEOUT_MS, 'Queueing a webhook delivery');
   }
 
   private check({ url, events }: { url?: string; events?: string[] }): void {

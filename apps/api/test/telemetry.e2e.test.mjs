@@ -146,7 +146,7 @@ test("a request's trace continues into its job, and through the database and Red
   const request = spans().find((s) => s.name === 'POST /v1/api-keys');
   assert.ok(request, 'no span for POST /v1/api-keys');
   const trace = spans().filter((s) => s.traceId === request.traceId);
-  assert.ok(trace.some((s) => s.name === 'process webhooks'), 'the job is not in the trace of the request that queued it');
+  assert.ok(trace.some((s) => /^process webhooks-\d$/.test(s.name)), 'the job is not in the trace of the request that queued it');
   assert.ok(trace.some((s) => s.scope === 'prisma'), 'no database span');
   assert.ok(trace.some((s) => s.scope.includes('ioredis')), 'no Redis span');
 });
@@ -165,8 +165,8 @@ test('logs arrive with their severity and the trace of their request', () => {
 test('metrics: request duration by route, queue depth with dead-letter queues, and runtime', async () => {
   assert.ok(dataPoints('http.server.request.duration').some((p) => attribute(p, 'http.route') === '/v1/api-keys/:id'));
   const depths = dataPoints('jobs.depth');
-  assert.ok(depths.some((p) => attribute(p, 'queue') === 'webhooks' && attribute(p, 'state') === 'waiting'));
-  assert.ok(depths.some((p) => attribute(p, 'queue') === 'webhooks-dlq'));
+  assert.ok(depths.some((p) => /^webhooks-\d$/.test(attribute(p, 'queue')) && attribute(p, 'state') === 'waiting'));
+  assert.ok(depths.some((p) => /^webhooks-\d-dlq$/.test(attribute(p, 'queue'))));
   assert.ok(metrics().some((m) => m.name.startsWith('nodejs.eventloop') || m.name.startsWith('v8js.')));
 });
 

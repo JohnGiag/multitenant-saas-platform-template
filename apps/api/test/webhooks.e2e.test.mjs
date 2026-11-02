@@ -11,6 +11,7 @@ import {
   WebhookSecretSchema,
 } from '@repo/shared-types';
 import { verifyWebhookSignature } from '../dist/modules/auth/domain/webhook-signature.js';
+import { partitionOf } from '../dist/modules/jobs/job-config.js';
 import { BlockedAddressError, deliveryError } from '../dist/optional/webhooks/infrastructure/https-delivery.js';
 import { cleanup, db, seedTenant, startApp, testQueue, waitFor } from './helpers.mjs';
 
@@ -51,11 +52,6 @@ before(async () => {
 
 after(async () => {
   receiver.close();
-  for (const name of ['webhooks', 'webhooks-dlq']) {
-    const queue = testQueue(name);
-    await queue.obliterate({ force: true }).catch(() => {});
-    await queue.close();
-  }
   await cleanup(app, Object.values(tenants));
 });
 
@@ -206,7 +202,7 @@ test('a failing receiver gets the event again; one that refuses it sends it to t
   assert.deepEqual(JSON.parse(second.body).data, { userId: member.id, role: 'Auditor' });
 
   // 404: not retried.
-  const dlq = testQueue('webhooks-dlq');
+  const dlq = testQueue(`webhooks-${partitionOf(tenants.a, 8)}-dlq`);
   await waitFor(async () => (await dlq.getJobs(['wait'])).some((j) => j.data.payload.endpointId === refusing.id));
   assert.equal(deliveriesTo('/refusing').length, 1);
   const [dead] = (await dlq.getJobs(['wait'])).filter((j) => j.data.payload.endpointId === refusing.id);

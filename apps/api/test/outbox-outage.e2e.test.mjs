@@ -5,7 +5,7 @@ import { connect, createServer } from 'node:net';
 import { after, before, test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { generateApiKey, hashApiKeySecret } from '../dist/modules/auth/domain/api-key.js';
-import { cleanup, db, QUEUE_CONNECTION, seedTenant, startApp, testQueue, waitFor } from './helpers.mjs';
+import { cleanup, db, QUEUE_CONNECTION, seedTenant, startApp, waitFor } from './helpers.mjs';
 
 process.env.WEBHOOKS_ALLOW_PRIVATE = 'true';
 
@@ -54,11 +54,6 @@ after(async () => {
   await app?.close();
   receiver.close();
   proxy.close();
-  for (const name of ['webhooks', 'webhooks-dlq']) {
-    const queue = testQueue(name);
-    await queue.obliterate({ force: true }).catch(() => {});
-    await queue.close();
-  }
   await cleanup([], [tenantId]);
 });
 

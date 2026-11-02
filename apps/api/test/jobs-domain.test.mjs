@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { validateEnv } from '../dist/config/env.validation.js';
-import { jobConfig } from '../dist/modules/jobs/job-config.js';
+import { jobConfig, partitionNames, partitionOf } from '../dist/modules/jobs/job-config.js';
 import { NotificationChannelRegistry } from '../dist/modules/notifications/domain/notification-channel.js';
 
 const configOf = (values) => ({ get: (name) => values[name] });
+
+test('partitions: one keeps the plain name, and a tenant always lands in the same one', () => {
+  assert.deepEqual(partitionNames('mail', 1), ['mail']);
+  assert.deepEqual(partitionNames('mail', 3), ['mail-0', 'mail-1', 'mail-2']);
+
+  const tenants = Array.from({ length: 800 }, () => crypto.randomUUID());
+  for (const tenant of tenants) assert.equal(partitionOf(tenant, 8), partitionOf(tenant, 8));
+  const counts = Array.from({ length: 8 }, (_, partition) => tenants.filter((tenant) => partitionOf(tenant, 8) === partition).length);
+  assert.ok(counts.every((count) => count > 50), `uneven: ${counts}`);
+});
 
 test('job config: defaults, overrides, and a bad value fails at boot', () => {
   assert.deepEqual(jobConfig(configOf({})), {

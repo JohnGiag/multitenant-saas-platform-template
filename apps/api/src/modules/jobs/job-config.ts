@@ -1,7 +1,16 @@
+import { crc32 } from 'node:zlib';
 import type { ConfigService } from '@nestjs/config';
 
 // How long a request waits on a queue. Queue connections wait out a Redis outage, which a request must not.
 export const QUEUE_TIMEOUT_MS = 2000;
+
+// A queue split by tenant, so a flood from one tenant slows only those sharing its partition. BullMQ forbids ":" in a
+// queue name, hence "-". One partition keeps the plain name.
+export const partitionNames = (name: string, partitions: number): string[] =>
+  partitions === 1 ? [name] : Array.from({ length: partitions }, (_, i) => `${name}-${i}`);
+
+// A hash, not a lookup: every instance agrees, and a tenant's jobs always land in the same place.
+export const partitionOf = (tenantId: string, partitions: number): number => crc32(tenantId) % partitions;
 
 // Ported from nestjs-fault-tolerant-queue: a malformed value stops the app at boot, not at the first job.
 function positiveInt(config: ConfigService, name: string, fallback: number): number {
