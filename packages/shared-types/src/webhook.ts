@@ -71,3 +71,23 @@ export type WebhookEndpointPageQuery = z.infer<typeof WebhookEndpointPageQuerySc
 // Every event type an endpoint can subscribe to: core's plus those declared by installed modules.
 export const WebhookEventTypesSchema = z.object({ types: z.array(EventTypeSchema) });
 export type WebhookEventTypes = z.infer<typeof WebhookEventTypesSchema>;
+
+// Why no response came back from an endpoint.
+export const WebhookDeliveryErrorSchema = z.enum(['timeout', 'refused_address', 'network']);
+export type WebhookDeliveryError = z.infer<typeof WebhookDeliveryErrorSchema>;
+
+// One attempt. Never the endpoint's response body: that comes from the tenant's server and could contain anything.
+export const WebhookDeliverySchema = z.object({
+  id: IdSchema,
+  endpointId: IdSchema,
+  eventId: z.string(),
+  eventType: EventTypeSchema,
+  attempt: z.number().int(),
+  statusCode: z.number().int().nullable(),
+  durationMs: z.number().int(),
+  error: WebhookDeliveryErrorSchema.nullable(),
+  nextRetryAt: TimestampSchema.nullable(),
+  payload: WebhookPayloadSchema,
+  createdAt: TimestampSchema,
+});
+export type WebhookDelivery = z.infer<typeof WebhookDeliverySchema>;

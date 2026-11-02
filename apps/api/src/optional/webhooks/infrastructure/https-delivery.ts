@@ -1,4 +1,5 @@
 import { lookup as dnsLookup, type LookupAddress, type LookupAllOptions, type LookupOneOptions } from 'node:dns';
+import type { WebhookDeliveryError } from '@repo/shared-types';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
@@ -9,6 +10,12 @@ const TIMEOUT_MS = 10_000;
 
 // The URL leads somewhere webhooks may not go (see address-policy.ts): a retry would only be refused again.
 export class BlockedAddressError extends Error {}
+
+// Why a delivery got no response, as a type: an error message could echo the endpoint's URL or its address.
+export function deliveryError(error: unknown): WebhookDeliveryError {
+  if (error instanceof BlockedAddressError) return 'refused_address';
+  return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError') ? 'timeout' : 'network';
+}
 
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void;
 

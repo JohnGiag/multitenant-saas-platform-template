@@ -7,6 +7,8 @@ import type {
   CreateWebhookEndpointDto,
   CursorPage,
   UpdateWebhookEndpointDto,
+  WebhookDelivery,
+  WebhookDeliveryError,
   WebhookEndpoint,
   WebhookEndpointPageQuery,
   WebhookPayload,
@@ -14,8 +16,10 @@ import type {
 } from '@repo/shared-types';
 import type { Queue } from 'bullmq';
 import { toCursorPage } from '../../../common/cursor-page.js';
+import { keysetArgs, keysetPage, type KeysetCursor } from '../../../common/keyset.js';
+import { RetentionSweep } from '../../../common/retention-sweep.js';
 import { withTimeout } from '../../../common/with-timeout.js';
-import type { WebhookEndpoint as EndpointRow } from '../../../generated/prisma/client.js';
+import type { WebhookEndpoint as EndpointRow, Prisma, WebhookDelivery as DeliveryRow } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { TenantEvents, type TenantEvent } from '../../../modules/events/domain/tenant-events.js';
 import { FeatureFlags } from '../../../modules/feature-flags/domain/feature-flags.js';
@@ -54,6 +58,33 @@ const toEndpoint = (row: EndpointRow): WebhookEndpoint => ({
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 });
+
+const toDelivery = (row: DeliveryRow): WebhookDelivery => ({
+  id: row.id,
+  endpointId: row.endpointId,
+  eventId: row.eventId,
+  eventType: row.eventType,
+  attempt: row.attempt,
+  statusCode: row.statusCode,
+  durationMs: row.durationMs,
+  error: row.error as WebhookDeliveryError | null,
+  nextRetryAt: row.nextRetryAt?.toISOString() ?? null,
+  payload: row.payload as unknown as WebhookPayload,
+  createdAt: row.createdAt.toISOString(),
+});
+
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+@Injectable()
+export class WebhookDeliverySweep extends RetentionSweep {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  protected sweep() {
+    return this.prisma.webhookDelivery.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - RETENTION_MS) } } });
+  }
+}
 
 @Injectable()
 export class PrismaWebhookService implements WebhookService, OnModuleInit {
@@ -136,6 +167,30 @@ export class PrismaWebhookService implements WebhookService, OnModuleInit {
     if (!endpoint.enabled) return 'disabled';
     const event: TenantEvent = { id: `evt_${randomUUID()}`, type: 'webhook.test', tenantId, occurredAt: new Date(), data: {} };
     await this.enqueue(event, [endpoint.id]);
+    return 'queued';
+  }
+
+  async deliveries(tenantId: string, endpointId: string, { cursor, limit }: { cursor?: KeysetCursor; limit: number }): Promise<CursorPage<WebhookDelivery> | null> {
+    if (!(await this.prisma.webhookEndpoint.findFirst({ where: { id: endpointId, tenantId }, select: { id: true } }))) return null;
+    // Served by the (tenant_id, endpoint_id, created_at, id) index.
+    const page = keysetArgs('createdAt', 'desc', cursor);
+    const rows = await this.prisma.webhookDelivery.findMany({
+      where: { tenantId, endpointId, ...(page.where as Prisma.WebhookDeliveryWhereInput) },
+      orderBy: page.orderBy as Prisma.WebhookDeliveryOrderByWithRelationInput[],
+      take: limit + 1,
+    });
+    return keysetPage(rows.map(toDelivery), limit, (d) => d.createdAt);
+  }
+
+  async redeliver(tenantId: string, deliveryId: string): Promise<'queued' | 'disabled' | null> {
+    const delivery = await this.prisma.webhookDelivery.findFirst({ where: { id: deliveryId, tenantId }, include: { endpoint: { select: { enabled: true } } } });
+    if (!delivery) return null;
+    if (!delivery.endpoint.enabled) return 'disabled';
+    const { endpointId, eventId, eventType } = delivery;
+    const payload = delivery.payload as unknown as WebhookPayload;
+    // A job id of its own, or BullMQ would ignore it as the job already done. The payload keeps the webhook-id.
+    const job = { jobId: `${eventId}-${endpointId}-${randomUUID()}`, attempts: DELIVERY_ATTEMPTS, backoff: { type: 'webhook' } };
+    await withTimeout(this.queue.add(eventType, { tenantId, endpointId, payload }, job), QUEUE_TIMEOUT_MS, 'Queueing a webhook delivery');
     return 'queued';
   }
 

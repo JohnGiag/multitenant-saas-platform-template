@@ -36,7 +36,7 @@ Tenants, sign-in, roles, API keys, encrypted per-tenant secrets, rate limits, ba
 | **Rate limiting** | Redis sliding window per tenant, caller and tier, plus per-account login limits. Answers `429` with `Retry-After`. |
 | **Background jobs** | BullMQ with retries, exponential backoff and a dead-letter queue. Workers load secrets only when a job runs. |
 | **Notifications** | Server-Sent Events across all API instances (Redis Pub/Sub), plus email and push as pluggable channels. |
-| **Outbound webhooks** | A tenant's events (members, API keys, tier changes, and your own) delivered to its HTTPS endpoints, signed with Standard Webhooks and retried for about a day. Never sent to private networks. |
+| **Outbound webhooks** | A tenant's events (members, API keys, tier changes, and your own) delivered to its HTTPS endpoints, signed with Standard Webhooks and retried for about a day. Never sent to private networks. Every attempt is logged for 30 days, and any delivery can be sent again. |
 | **Billing** | Stripe subscriptions set each tenant's tier. Stripe hosts checkout and the customer portal; a cancelled plan stays paid until its period ends. |
 | **File storage** | R2 or any S3-compatible store through presigned URLs, with a per-tenant quota. File bytes never touch the API. |
 | **Audit log** | Every successful write is recorded with its actor and target, and can be filtered by actor, target and time. |

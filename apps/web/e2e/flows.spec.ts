@@ -133,6 +133,28 @@ test.describe('Webhooks', () => {
       await row.getByRole('button', { name: 'Delete' }).click();
       await expect(page.getByRole('row').filter({ hasText: url })).toHaveCount(0);
     });
+
+    test('sends a test event and reads its delivery, refused at the private address', async ({ page }) => {
+      const url = `https://localhost/e2e-${Date.now()}`;
+      await page.goto('/webhooks');
+      await page.getByLabel('Endpoint URL').fill(url);
+      await page.getByRole('button', { name: 'Add endpoint' }).click();
+      const row = page.getByRole('row').filter({ hasText: url });
+      await row.getByRole('button', { name: 'Send test' }).click();
+      await expect(row.getByText('Test event sent')).toBeVisible();
+
+      await row.getByRole('link', { name: `Deliveries of ${url}` }).click();
+      await expect(page.getByRole('heading', { level: 1, name: 'Deliveries' })).toBeVisible();
+      await expect(async () => {
+        await page.reload();
+        await expect(page.getByRole('cell', { name: 'webhook.test' })).toBeVisible({ timeout: 1000 });
+      }).toPass();
+      await expect(page.getByRole('cell', { name: 'Address refused' })).toBeVisible();
+      await expectAccessible(page);
+
+      await page.getByRole('button', { name: 'Redeliver' }).click();
+      await expect(page.getByText('Redelivery queued.')).toBeVisible();
+    });
   });
 
   test.describe('Auditor', () => {

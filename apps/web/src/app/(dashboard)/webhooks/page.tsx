@@ -1,4 +1,5 @@
 import type { CursorPage, WebhookEndpoint, WebhookEventTypes } from '@repo/shared-types';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
 import { Pager } from '@/components/pager';
@@ -70,6 +71,13 @@ export default async function WebhooksPage({ searchParams }: PageProps<'/webhook
                     <TableCell className="max-w-xs whitespace-normal">
                       <span className="font-mono text-sm break-all">{endpoint.url}</span>
                       {endpoint.description && <span className="block text-sm text-muted-foreground">{endpoint.description}</span>}
+                      <Link
+                        href={`/webhooks/${endpoint.id}?${new URLSearchParams({ url: endpoint.url })}`}
+                        aria-label={t('webhooks.deliveriesOf', { url: endpoint.url })}
+                        className="block text-sm underline underline-offset-4 outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
+                      >
+                        {t('webhooks.deliveries')}
+                      </Link>
                     </TableCell>
                     <TableCell className="whitespace-normal">
                       {endpoint.events.length === 0 ? (

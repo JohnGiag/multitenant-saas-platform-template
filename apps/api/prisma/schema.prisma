@@ -53,6 +53,7 @@ model Tenant {
   storageObjects StorageObject[]
   billingAccount BillingAccount?
   webhookEndpoints WebhookEndpoint[]
+  webhookDeliveries WebhookDelivery[]
   featureFlags   TenantFeatureFlag[]
   outboxEvents   OutboxEvent[]
   idempotencyKeys IdempotencyKey[]
@@ -372,10 +373,37 @@ model WebhookEndpoint {
   // Cascade: core tenant deletion must not need to know this optional table; its queued deliveries are dropped by
   // the worker's own deletion hook.
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
 
   // UUIDv7 ids are time-ordered, so (tenant_id, id) also serves keyset pagination.
   @@index([tenantId, id])
   @@map("webhook_endpoints")
+}
+
+// One attempt to deliver an event to an endpoint, kept for 30 days. The payload holds ids only. Response bodies are never
+// stored: they come from the tenant's server and could contain anything.
+model WebhookDelivery {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  endpointId  String    @map("endpoint_id") @db.Uuid
+  eventId     String    @map("event_id")
+  eventType   String    @map("event_type")
+  attempt     Int
+  // Null when no response came back; `error` then says why.
+  statusCode  Int?      @map("status_code")
+  durationMs  Int       @map("duration_ms")
+  error       String?
+  nextRetryAt DateTime? @map("next_retry_at") @db.Timestamptz(3)
+  payload     Json
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, endpointId, createdAt, id])
+  // For the retention sweep, which works by age alone.
+  @@index([createdAt])
+  @@map("webhook_deliveries")
 }
 
 // The dashboard's text, one row per language and key (GET /v1/translations/:locale). Platform-wide, not

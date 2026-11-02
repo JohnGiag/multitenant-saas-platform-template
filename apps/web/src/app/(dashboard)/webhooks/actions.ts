@@ -54,6 +54,16 @@ export async function sendTest(id: string): Promise<FormState> {
   return run(() => api(`/webhooks/${IdSchema.parse(id)}/test`, { method: 'POST' }), (await getT())('webhooks.testSent'));
 }
 
+export async function redeliver(endpointId: string, deliveryId: string): Promise<FormState> {
+  try {
+    await api(`/webhook-deliveries/${IdSchema.parse(deliveryId)}/redeliver`, { method: 'POST' });
+  } catch (error) {
+    return apiFailure(error);
+  }
+  revalidatePath(`/webhooks/${IdSchema.parse(endpointId)}`);
+  return { success: (await getT())('webhooks.redelivered') };
+}
+
 export async function setEnabled(id: string, enabled: boolean): Promise<FormState> {
   const t = await getT();
   return run(

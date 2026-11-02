@@ -18,7 +18,9 @@ import {
   CreatedWebhookEndpointSchema,
   CreateWebhookEndpointSchema,
   cursorPage,
+  pageQuery,
   UpdateWebhookEndpointSchema,
+  WebhookDeliverySchema,
   WebhookEndpointPageQuerySchema,
   WebhookEndpointSchema,
   WebhookEventTypesSchema,
@@ -27,12 +29,15 @@ import {
   type CreateWebhookEndpointDto,
   type CursorPage,
   type UpdateWebhookEndpointDto,
+  type WebhookDelivery,
   type WebhookEndpoint,
   type WebhookEndpointPageQuery,
   type WebhookEventTypes,
   type WebhookSecret,
 } from '@repo/shared-types';
+import { z } from 'zod';
 import { ApiDoc } from '../../../common/api-doc.js';
+import { keysetCursorSchema } from '../../../common/keyset.js';
 import { unavailableOnTimeout } from '../../../common/unavailable-on-timeout.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { RequireScope, Roles } from '../../../modules/auth/presentation/decorators.js';
@@ -46,6 +51,9 @@ import {
   WebhookLimitError,
   type WebhookService,
 } from '../domain/ports/webhook.service.js';
+
+// Deliveries are listed by created_at, so the cursor value must be a timestamp.
+const DeliveryPageQuerySchema = pageQuery(keysetCursorSchema(z.iso.datetime()));
 
 // Where the tenant's events go. Its own admins manage endpoints and Auditors read them; SuperAdmin stays out (the
 // events are the tenant's business data, and the secrets sign in its name).
@@ -115,6 +123,34 @@ export class WebhooksController {
   @HttpCode(202)
   async test(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
     const result = await this.webhooks.sendTest(tenantId, id).catch(unavailableOnTimeout);
+    if (result === 'disabled') throw new ConflictException('This endpoint is turned off: turn it on first');
+    found(result);
+  }
+
+  @Roles('TenantAdmin', 'Auditor')
+  @ApiDoc('Every attempt to deliver an event to this endpoint, newest first, for the last 30 days', cursorPage(WebhookDeliverySchema))
+  @Get(':id/deliveries')
+  async deliveries(
+    @TenantId() tenantId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query(new ZodValidationPipe(DeliveryPageQuerySchema)) query: z.infer<typeof DeliveryPageQuerySchema>,
+  ): Promise<CursorPage<WebhookDelivery>> {
+    return found(await this.webhooks.deliveries(tenantId, id, query));
+  }
+}
+
+@Controller('webhook-deliveries')
+@RequireScope()
+@Roles('TenantAdmin')
+@RequireFeature(WEBHOOKS_FEATURE)
+export class WebhookDeliveriesController {
+  constructor(@Inject(WEBHOOK_SERVICE) private readonly webhooks: WebhookService) {}
+
+  @ApiDoc('Send a delivery again, with its original `webhook-id` so receivers can still drop duplicates', null)
+  @Post(':id/redeliver')
+  @HttpCode(202)
+  async redeliver(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    const result = await this.webhooks.redeliver(tenantId, id).catch(unavailableOnTimeout);
     if (result === 'disabled') throw new ConflictException('This endpoint is turned off: turn it on first');
     found(result);
   }

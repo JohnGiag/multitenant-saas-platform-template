@@ -5,16 +5,19 @@ import { after, before, test } from 'node:test';
 import {
   CreatedWebhookEndpointSchema,
   CORE_EVENT_TYPES,
+  WebhookDeliverySchema,
   WebhookEndpointSchema,
   WebhookPayloadSchema,
   WebhookSecretSchema,
 } from '@repo/shared-types';
 import { verifyWebhookSignature } from '../dist/modules/auth/domain/webhook-signature.js';
+import { BlockedAddressError, deliveryError } from '../dist/optional/webhooks/infrastructure/https-delivery.js';
 import { cleanup, db, seedTenant, startApp, testQueue, waitFor } from './helpers.mjs';
 
 process.env.WEBHOOKS_ALLOW_PRIVATE = 'true';
 
 // The receiver: records every request per path, and answers with the next status queued for that path (default 200).
+const RECEIVER_SAYS = 'a private note from the receiver';
 const received = [];
 const statuses = new Map();
 const receiver = createServer((req, res) => {
@@ -23,7 +26,7 @@ const receiver = createServer((req, res) => {
   req.on('end', () => {
     received.push({ path: req.url, headers: req.headers, body });
     res.statusCode = statuses.get(req.url)?.shift() ?? 200;
-    res.end();
+    res.end(RECEIVER_SAYS);
   });
 });
 let base;
@@ -209,6 +212,75 @@ test('a failing receiver gets the event again; one that refuses it sends it to t
   const [dead] = (await dlq.getJobs(['wait'])).filter((j) => j.data.payload.endpointId === refusing.id);
   assert.match(dead.data.failedReason, /answered 404/);
   await dlq.close();
+});
+
+const deliveryLog = async (id, token = tokens.adminA) => (await (await call('GET', `/webhooks/${id}/deliveries`, { token })).json()).items;
+
+test('every attempt is logged, without the receiver\'s response, and shows if it will be retried', async () => {
+  const logged = await endpoint(tokens.adminA, '/logged', { events: ['api_key.created'] });
+  statuses.set('/logged', [503]);
+  const key = await (await createKey()).json();
+
+  await lastTo('/logged', 2); // 503, then the retry
+  await waitFor(async () => (await deliveryLog(logged.id)).length === 2);
+  const [second, first] = await deliveryLog(logged.id);
+  assert.deepEqual(WebhookDeliverySchema.parse(first), first);
+  assert.deepEqual([first.attempt, first.statusCode, first.error], [1, 503, null]);
+  assert.ok(new Date(first.nextRetryAt) > new Date(first.createdAt));
+  assert.deepEqual([second.attempt, second.statusCode, second.nextRetryAt], [2, 200, null]);
+  assert.equal(first.eventId, second.eventId);
+  assert.deepEqual(first.payload.data, { apiKeyId: key.id, role: 'User' });
+  assert.ok(first.durationMs >= 0);
+
+  const row = await db.webhookDelivery.findUniqueOrThrow({ where: { id: first.id } });
+  assert.equal(row.tenantId, tenants.a);
+  assert.ok(!JSON.stringify(await db.webhookDelivery.findMany({ where: { endpointId: logged.id } })).includes(RECEIVER_SAYS));
+});
+
+test('a redelivery keeps its webhook-id, and only a TenantAdmin of that tenant can ask for one', async () => {
+  const again = await endpoint(tokens.adminA, '/again', { events: ['api_key.created'] });
+  await createKey();
+  await lastTo('/again');
+  await waitFor(async () => (await deliveryLog(again.id)).length === 1);
+  const [delivery] = await deliveryLog(again.id);
+  const path = `/webhook-deliveries/${delivery.id}/redeliver`;
+
+  assert.equal((await call('POST', path, { token: tokens.userA })).status, 403);
+  assert.equal((await call('POST', path, { token: tokens.auditorA })).status, 403);
+  assert.equal((await call('POST', path, { token: tokens.super, tenant: tenants.a })).status, 403);
+  assert.equal((await call('POST', path, { token: tokens.adminB })).status, 404, "another tenant's delivery does not exist for it");
+  assert.equal(deliveriesTo('/again').length, 1);
+
+  assert.equal((await call('POST', path, { token: tokens.adminA })).status, 202);
+  const redelivered = await lastTo('/again', 2);
+  const [original] = deliveriesTo('/again');
+  assert.equal(redelivered.headers['webhook-id'], original.headers['webhook-id'], 'receivers can still deduplicate');
+  assert.equal(verify(redelivered, again.secret), true);
+  assert.deepEqual(JSON.parse(redelivered.body), JSON.parse(original.body));
+
+  assert.equal((await call('PATCH', `/webhooks/${again.id}`, { token: tokens.adminA, body: { enabled: false } })).status, 200);
+  assert.equal((await call('POST', path, { token: tokens.adminA })).status, 409);
+});
+
+test('the log belongs to its tenant, Auditors read it, SuperAdmin does not, and it goes with its endpoint', async () => {
+  const theirs = await endpoint(tokens.adminA, '/log-a', { events: ['api_key.created'] });
+  await createKey();
+  await waitFor(async () => (await deliveryLog(theirs.id)).length === 1);
+
+  assert.equal((await deliveryLog(theirs.id, tokens.auditorA)).length, 1);
+  const list = (options) => call('GET', `/webhooks/${theirs.id}/deliveries`, options);
+  assert.equal((await list({ token: tokens.userA })).status, 403);
+  assert.equal((await list({ token: tokens.super, tenant: tenants.a })).status, 403);
+  assert.equal((await list({ token: tokens.adminB })).status, 404);
+
+  assert.equal((await call('DELETE', `/webhooks/${theirs.id}`, { token: tokens.adminA })).status, 204);
+  assert.equal(await db.webhookDelivery.count({ where: { endpointId: theirs.id } }), 0);
+});
+
+test('why a delivery got no response is kept as a type, never as a message', () => {
+  assert.equal(deliveryError(new BlockedAddressError('10.0.0.1 is not a public address')), 'refused_address');
+  assert.equal(deliveryError(new DOMException('timed out', 'TimeoutError')), 'timeout');
+  assert.equal(deliveryError(new Error('ECONNRESET at 10.0.0.1')), 'network');
 });
 
 test('the webhooks feature gates the whole module: routes, capability and deliveries, and back on the endpoints still work', async () => {
