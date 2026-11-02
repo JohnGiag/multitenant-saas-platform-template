@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Worker } from 'bullmq';
 import { partitionOf } from '../dist/modules/jobs/job-config.js';
-import { cleanup, db, QUEUE_CONNECTION, QUEUE_PREFIX, seedTenant, startApp, testQueue, waitFor, WEBHOOK_QUEUES } from './helpers.mjs';
+import { cleanup, db, QUEUE_CONNECTION, QUEUE_PREFIX, seedTenant, seedUser, startApp, testQueue, waitFor, WEBHOOK_QUEUES } from './helpers.mjs';
 
 process.env.WEBHOOKS_ALLOW_PRIVATE = 'true';
 
@@ -42,8 +42,9 @@ before(async () => {
   base = `http://127.0.0.1:${receiver.address().port}`;
   tenants.platform = await seedTenant('fair-e2e-platform', { super: 'SuperAdmin' });
   tenants.noisy = await seedTenant('fair-e2e-noisy', { admin: 'TenantAdmin' });
-  do tenants.quiet = await seedTenant('fair-e2e-quiet', { admin: 'TenantAdmin' });
+  do tenants.quiet = await seedTenant('fair-e2e-quiet');
   while (partition(tenants.quiet) === partition(tenants.noisy) && (await db.tenant.delete({ where: { id: tenants.quiet } })));
+  await seedUser(tenants.quiet, { email: 'admin@example.com', role: 'TenantAdmin' });
 
   for (const index of [0, 7]) await failedBeforeStartup(index);
   ({ app, call, login } = await startApp());
