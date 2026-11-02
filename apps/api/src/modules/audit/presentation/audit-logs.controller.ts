@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { keysetCursorSchema } from '../../../common/keyset.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { CurrentPrincipal, Roles } from '../../auth/presentation/decorators.js';
+import { CurrentPrincipal, RequireScope, Roles } from '../../auth/presentation/decorators.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { AUDIT_LOG_REPOSITORY, type AuditLogRepository } from '../domain/ports/audit-log.repository.js';
 
@@ -12,6 +12,7 @@ import { AUDIT_LOG_REPOSITORY, type AuditLogRepository } from '../domain/ports/a
 const AuditLogPageQuerySchema = pageQuery(keysetCursorSchema(z.iso.datetime())).extend(AuditLogFilterSchema.shape);
 
 @Controller('audit-logs')
+@RequireScope()
 export class AuditLogsController {
   constructor(@Inject(AUDIT_LOG_REPOSITORY) private readonly auditLogs: AuditLogRepository) {}
 

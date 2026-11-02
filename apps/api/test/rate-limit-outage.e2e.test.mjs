@@ -13,7 +13,7 @@ before(async () => {
   const addKey = async (role) => {
     const key = generateApiKey();
     await db.apiKey.create({
-      data: { tenantId, name: 'outage', role, prefix: key.prefix, secretHash: hashApiKeySecret(key.secret) },
+      data: { tenantId, name: 'outage', role, scopes: ['read', 'write'], prefix: key.prefix, secretHash: hashApiKeySecret(key.secret) },
     });
     return key.raw;
   };

@@ -17,7 +17,7 @@ import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/ra
 import { LOGIN_CEILING_LIMIT, loginAccountKey, loginEmailKey } from '../../rate-limit/domain/rate-limit-policy.js';
 import { clearAccountAttempts, countAccountAttempt } from '../../rate-limit/presentation/account-attempts.js';
 import { AUTH_SERVICE, type AuthService } from '../domain/ports/auth.port.js';
-import { CurrentPrincipal, Public, Roles, type AuthenticatedRequest } from './decorators.js';
+import { CurrentPrincipal, Public, RequireScope, Roles, type AuthenticatedRequest } from './decorators.js';
 import { LocalAuthOnly } from './local-auth-only.js';
 
 @Controller('auth')
@@ -76,6 +76,7 @@ export class AuthController {
   }
 
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
+  @RequireScope('read')
   @ApiDoc('The caller: user or API key, tenant, role and tier', PrincipalSchema)
   @Get('me')
   me(@CurrentPrincipal() principal: Principal): Principal {

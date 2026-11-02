@@ -22,7 +22,7 @@ import {
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { Roles } from '../../../modules/auth/presentation/decorators.js';
-import { TenantId } from '../../../modules/tenancy/presentation/tenant-context.js';
+import { LiveOnly, TenantId } from '../../../modules/tenancy/presentation/tenant-context.js';
 import {
   BILLING_SERVICE,
   BillingConflictError,
@@ -34,6 +34,7 @@ import {
 // The tenant's own subscription: its admins manage it, Auditors read it, SuperAdmin stays out (it sets no tiers
 // while billing is on). Card details never reach the API: Stripe hosts the checkout and the portal.
 @Controller('billing')
+@LiveOnly()
 @Roles('TenantAdmin')
 export class BillingController {
   constructor(@Inject(BILLING_SERVICE) private readonly billing: BillingService) {}

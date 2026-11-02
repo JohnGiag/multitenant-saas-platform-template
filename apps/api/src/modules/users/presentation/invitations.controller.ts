@@ -29,8 +29,8 @@ import {
 } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { Public, Roles } from '../../auth/presentation/decorators.js';
-import { TenantId } from '../../tenancy/presentation/tenant-context.js';
+import { Public, RequireScope, Roles } from '../../auth/presentation/decorators.js';
+import { LiveOnly, TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { INVITATION_SERVICE, type InvitationService } from '../domain/ports/invitation.service.js';
 import { rethrowMailError } from './mail-errors.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
@@ -39,6 +39,8 @@ import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 // go out with the platform's email credentials, so no tenant can read the link and accept it.
 @LocalAuthOnly()
 @Controller('invitations')
+@LiveOnly()
+@RequireScope()
 @Roles('SuperAdmin', 'TenantAdmin')
 export class InvitationsController {
   constructor(@Inject(INVITATION_SERVICE) private readonly invitations: InvitationService) {}

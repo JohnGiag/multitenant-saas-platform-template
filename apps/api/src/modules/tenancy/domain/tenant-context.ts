@@ -6,3 +6,8 @@ export function resolveTenantId(principal: Principal, requestedTenantId: string 
   if (requestedTenantId === undefined || requestedTenantId === principal.tenantId) return principal.tenantId;
   return principal.role === 'SuperAdmin' ? requestedTenantId : null;
 }
+
+// Test mode (X-Sandbox) is for a tenant's own members, with the role they have. A SuperAdmin manages tenants, nothing
+// inside them, and an API key carries its mode in the key: honouring the header for one would let a live key act on
+// test data, or a test key be mistaken for live.
+export const maySwitchToSandbox = (principal: Principal) => principal.kind === 'user' && principal.role !== 'SuperAdmin';

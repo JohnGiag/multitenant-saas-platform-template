@@ -10,6 +10,8 @@ const TOKEN_COOKIE = 'session';
 const REFRESH_COOKIE = 'refresh';
 // The tenant a SuperAdmin is acting on (sent as X-Tenant-Id); absent means their own.
 const TENANT_COOKIE = 'tenant';
+// A member working on their tenant's test data (sent as X-Sandbox); absent means live.
+const TEST_MODE_COOKIE = 'test_mode';
 
 const options = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' } as const;
 
@@ -26,7 +28,9 @@ export async function getRefreshToken(): Promise<string | undefined> {
 
 export async function startSession(token: AuthToken): Promise<void> {
   await renewSession(token);
-  (await cookies()).delete(TENANT_COOKIE);
+  const jar = await cookies();
+  jar.delete(TENANT_COOKIE);
+  jar.delete(TEST_MODE_COOKIE);
 }
 
 // Keeps the tenant a SuperAdmin has open: unlike a sign-in, the same person carries on.
@@ -41,6 +45,17 @@ export async function endSession(): Promise<void> {
   jar.delete(TOKEN_COOKIE);
   jar.delete(REFRESH_COOKIE);
   jar.delete(TENANT_COOKIE);
+  jar.delete(TEST_MODE_COOKIE);
+}
+
+export async function getTestMode(): Promise<boolean> {
+  return (await cookies()).has(TEST_MODE_COOKIE);
+}
+
+export async function setTestMode(on: boolean): Promise<void> {
+  const jar = await cookies();
+  if (on) jar.set(TEST_MODE_COOKIE, '1', options);
+  else jar.delete(TEST_MODE_COOKIE);
 }
 
 export async function getTenantOverride(): Promise<string | undefined> {

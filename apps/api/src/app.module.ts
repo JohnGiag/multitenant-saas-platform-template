@@ -7,6 +7,7 @@ import { RedisModule } from './infrastructure/redis/redis.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { AuditInterceptor } from './modules/audit/presentation/audit.interceptor.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { ApiScopesModule } from './modules/auth/api-scopes.module.js';
 import { EventsModule } from './modules/events/events.module.js';
 import { FeatureFlagsModule } from './modules/feature-flags/feature-flags.module.js';
 import { AccessGuard } from './modules/auth/presentation/access.guard.js';
@@ -34,6 +35,7 @@ export class AppModule {
         PrismaModule,
         RedisModule,
         EventsModule,
+        ApiScopesModule,
         AuthModule,
         RateLimitModule,
         TenancyModule,

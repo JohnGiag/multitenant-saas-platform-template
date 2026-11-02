@@ -42,7 +42,7 @@ before(async () => {
   await new Promise((resolve) => receiver.listen(0, '127.0.0.1', resolve));
   tenantId = await seedTenant('outbox-outage-e2e');
   const key = generateApiKey();
-  await db.apiKey.create({ data: { tenantId, name: 'outage', role: 'TenantAdmin', prefix: key.prefix, secretHash: hashApiKeySecret(key.secret) } });
+  await db.apiKey.create({ data: { tenantId, name: 'outage', role: 'TenantAdmin', scopes: ['read', 'write'], prefix: key.prefix, secretHash: hashApiKeySecret(key.secret) } });
   adminKey = key.raw;
   process.env.REDIS_URL = `redis://127.0.0.1:${proxyPort}`;
   ({ app, call } = await startApp());

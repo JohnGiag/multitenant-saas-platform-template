@@ -11,14 +11,16 @@ import { Button } from '@/components/ui/button';
 import { api, getCapabilities, getCurrentTenant, getPrincipal } from '@/lib/api';
 import { CLERK } from '@/lib/auth-mode';
 import { getT } from '@/lib/i18n';
-import { getTenantOverride } from '@/lib/session';
+import { getTenantOverride, getTestMode } from '@/lib/session';
 import { signOut } from '../(auth)/actions';
+import { switchTestMode } from './actions';
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const [me, t] = await Promise.all([getPrincipal(), getT()]);
   // Capability-gated links are tenant features, which SuperAdmin never gets; skipping the call also keeps the
   // layout working if its selected tenant was deleted.
   const features = me.role === 'SuperAdmin' ? [] : (await getCapabilities()).filter((c) => c.enabled).map((c) => c.key);
+  const testMode = await getTestMode();
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
       <a
@@ -29,7 +31,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       </a>
       <aside className="border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:h-dvh md:w-64 md:shrink-0 md:overflow-y-auto md:border-r md:border-b-0">
         <Brand className="px-6 py-5" />
-        <SidebarNav role={me.role} features={features} />
+        <SidebarNav role={me.role} features={features} testMode={testMode} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex min-h-16 flex-wrap items-center justify-between gap-4 border-b bg-background/85 px-4 py-3 backdrop-blur sm:px-6 lg:px-10">
@@ -42,6 +44,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             <CurrentTenant />
           )}
           <div className="flex items-center gap-3">
+            {me.role !== 'SuperAdmin' && (
+              <form action={switchTestMode.bind(null, !testMode)}>
+                <Button type="submit" variant={testMode ? 'default' : 'outline'} size="sm" aria-pressed={testMode}>
+                  {t('testMode.switch')}
+                </Button>
+              </form>
+            )}
             <Badge variant="secondary">{me.role}</Badge>
             <LanguageSwitcher />
             <ThemeToggle />
@@ -57,6 +66,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             )}
           </div>
         </header>
+        {testMode && (
+          <p role="status" className="border-b bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground sm:px-6 lg:px-10">
+            {t('testMode.banner')}
+          </p>
+        )}
         {/* *:mx-auto: each page's column sits centred in the space beside the sidebar. */}
         <main id="main" tabIndex={-1} className="flex-1 px-4 py-8 outline-none *:mx-auto *:w-full sm:px-6 lg:px-10">
           {children}

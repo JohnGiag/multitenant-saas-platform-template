@@ -10,6 +10,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { api, getPrincipal } from '@/lib/api';
 import { CLERK } from '@/lib/auth-mode';
 import { getT, pageTitle } from '@/lib/i18n';
+import { getTestMode } from '@/lib/session';
 import { changeRole, invite, removeMember, resendInvitation, revokeInvitation } from './actions';
 
 export const generateMetadata = pageTitle('nav.users');
@@ -18,7 +19,7 @@ const PAGE_SIZE = 50;
 
 export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
   const [me, t] = await Promise.all([getPrincipal(), getT()]);
-  if (me.role === 'User') notFound();
+  if (me.role === 'User' || (await getTestMode())) notFound();
   const canManage = me.role !== 'Auditor';
   // Each list pages on its own keyset cursor: ?members=<cursor>&invites=<cursor>.
   const params = await searchParams;

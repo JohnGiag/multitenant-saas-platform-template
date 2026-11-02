@@ -2,13 +2,14 @@ import { Controller, Get, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CapabilityResponseSchema, type CapabilityResponse } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
-import { Roles } from '../../auth/presentation/decorators.js';
+import { RequireScope, Roles } from '../../auth/presentation/decorators.js';
 import { FeatureFlags } from '../../feature-flags/domain/feature-flags.js';
 import { INTEGRATION_SERVICE, type IntegrationService } from '../../integrations/domain/ports/integration.service.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { OPTIONAL_MODULES, toCapabilities, type OptionalModule } from '../domain/optional-module.js';
 
 @Controller('system')
+@RequireScope()
 export class CapabilitiesController {
   constructor(
     @Inject(OPTIONAL_MODULES) private readonly modules: OptionalModule[],

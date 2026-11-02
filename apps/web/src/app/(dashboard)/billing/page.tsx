@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { api, ApiError, getCapabilities, getPrincipal } from '@/lib/api';
 import { getT, pageTitle } from '@/lib/i18n';
+import { getTestMode } from '@/lib/session';
 import { openPortal, startCheckout } from './actions';
 
 export const generateMetadata = pageTitle('nav.billing');
@@ -15,7 +16,7 @@ const ENDED = new Set(['canceled', 'incomplete_expired']);
 export default async function BillingPage({ searchParams }: PageProps<'/billing'>) {
   const [me, t] = await Promise.all([getPrincipal(), getT()]);
   // The tenant's own subscription: its admins manage it, Auditors read it, SuperAdmin stays out.
-  if (me.role !== 'TenantAdmin' && me.role !== 'Auditor') notFound();
+  if ((me.role !== 'TenantAdmin' && me.role !== 'Auditor') || (await getTestMode())) notFound();
   if (!(await getCapabilities()).some((c) => c.key === 'billing' && c.enabled)) notFound();
   const canManage = me.role === 'TenantAdmin';
   // Back from Stripe Checkout with the session id Stripe put in the link: applied now rather than when the webhook

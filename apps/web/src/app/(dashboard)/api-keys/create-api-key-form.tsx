@@ -1,16 +1,18 @@
 'use client';
 
+import { CORE_API_SCOPES } from '@repo/shared-types';
 import { useActionState, useState } from 'react';
 import { Field } from '@/components/field';
 import { useT } from '@/components/i18n-provider';
 import { RoleSelect } from '@/components/choice-select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { createApiKey, type CreateApiKeyState } from './actions';
 
-export function CreateApiKeyForm() {
+export function CreateApiKeyForm({ scopes }: { scopes: string[] }) {
   const t = useT();
   const [state, formAction, pending] = useActionState<CreateApiKeyState, FormData>(createApiKey, undefined);
   // Tied to the key it is about, so a newer key never shows the previous one's "Copied".
@@ -27,13 +29,26 @@ export function CreateApiKeyForm() {
 
   return (
     <div className="grid gap-4">
-      <form action={formAction} className="grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end" aria-busy={pending}>
-        <Field id="key-name" name="name" label={t('common.name')} required maxLength={100} autoComplete="off" />
-        <div className="grid gap-2">
-          <Label htmlFor="key-role">{t('common.role')}</Label>
-          <RoleSelect id="key-role" />
+      <form action={formAction} className="grid gap-4" aria-busy={pending}>
+        <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+          <Field id="key-name" name="name" label={t('common.name')} required maxLength={100} autoComplete="off" />
+          <div className="grid gap-2">
+            <Label htmlFor="key-role">{t('common.role')}</Label>
+            <RoleSelect id="key-role" />
+          </div>
         </div>
-        <Button type="submit" disabled={pending}>
+        <fieldset className="grid gap-2">
+          <legend className="text-sm font-medium">{t('apiKeys.scopes')}</legend>
+          <div className="flex flex-wrap gap-4">
+            {scopes.map((scope) => (
+              <div key={scope} className="flex items-center gap-2">
+                <Checkbox id={`scope-${scope}`} name="scopes" value={scope} defaultChecked={(CORE_API_SCOPES as readonly string[]).includes(scope)} />
+                <Label htmlFor={`scope-${scope}`}>{scope}</Label>
+              </div>
+            ))}
+          </div>
+        </fieldset>
+        <Button type="submit" disabled={pending} className="justify-self-start">
           {pending ? t('common.working') : t('apiKeys.createButton')}
         </Button>
       </form>

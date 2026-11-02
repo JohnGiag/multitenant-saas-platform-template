@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { AdminUpdateTenantDto, CreateTenantDto, CursorPage, Tenant, TenantPageQuery } from '@repo/shared-types';
 import { toCursorPage } from '../../../common/cursor-page.js';
+import { hasCode } from '../../../common/prisma-errors.js';
 import type { Tenant as TenantRow } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { recordEvent } from '../../events/infrastructure/outbox.js';
@@ -29,7 +30,7 @@ export class PrismaTenantRepository implements TenantRepository {
   async list({ cursor, limit }: TenantPageQuery): Promise<CursorPage<Tenant>> {
     // UUIDv7 ids sort by creation time, so the primary key is the keyset.
     const rows = await this.prisma.tenant.findMany({
-      where: cursor ? { id: { gt: cursor } } : {},
+      where: { sandboxOf: null, ...(cursor && { id: { gt: cursor } }) },
       orderBy: { id: 'asc' },
       take: limit + 1,
     });
@@ -53,19 +54,35 @@ export class PrismaTenantRepository implements TenantRepository {
     });
   }
 
+  async sandboxOf(liveTenantId: string): Promise<string> {
+    const find = () => this.prisma.tenant.findUnique({ where: { sandboxOf: liveTenantId }, select: { id: true } });
+    const existing = await find();
+    if (existing) return existing.id;
+    const { name } = await this.prisma.tenant.findUniqueOrThrow({ where: { id: liveTenantId }, select: { name: true } });
+    try {
+      const { id } = await this.prisma.tenant.create({ data: { name: `${name.slice(0, 90)} (test)`, sandboxOf: liveTenantId } });
+      return id;
+    } catch (error) {
+      // A concurrent request created it first.
+      if (!hasCode(error, 'P2002')) throw error;
+      return (await find())!.id;
+    }
+  }
+
   async delete(id: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id },
-      select: { _count: { select: { users: { where: { role: 'SuperAdmin' } } } } },
+      select: { sandbox: { select: { id: true } }, _count: { select: { users: { where: { role: 'SuperAdmin' } } } } },
     });
     if (!tenant) return 'not_found' as const;
     // The platform tenant: deleting it would delete every SuperAdmin and lock the platform out. The API
     // never creates or demotes SuperAdmins, so a tenant cannot gain or lose this protection through it.
     if (tenant._count.users > 0) return 'protected' as const;
     // First, while the tenant's secrets still exist: a hook that fails leaves the tenant for a retry.
-    await this.deletionHooks.run(id);
-    const where = { tenantId: id };
-    const [, , , , , , , { count }] = await this.prisma.$transaction([
+    const ids = tenant.sandbox ? [tenant.sandbox.id, id] : [id];
+    for (const tenantId of ids) await this.deletionHooks.run(tenantId);
+    const where = { tenantId: { in: ids } };
+    const [, , , , , , , , { count }] = await this.prisma.$transaction([
       this.prisma.outboxEvent.deleteMany({ where }),
       // Its members' own actions; what a SuperAdmin did to it stays in the SuperAdmin's tenant.
       this.prisma.auditLog.deleteMany({ where }),
@@ -75,6 +92,7 @@ export class PrismaTenantRepository implements TenantRepository {
       this.prisma.invitation.deleteMany({ where }),
       // Also removes their push devices, password resets and sessions (cascade).
       this.prisma.user.deleteMany({ where }),
+      this.prisma.tenant.deleteMany({ where: { sandboxOf: id } }),
       this.prisma.tenant.deleteMany({ where: { id } }),
     ]);
     return count === 1 ? ('deleted' as const) : ('not_found' as const);

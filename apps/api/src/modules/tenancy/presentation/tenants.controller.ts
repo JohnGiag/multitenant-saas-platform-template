@@ -31,13 +31,14 @@ import {
 } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { Roles } from '../../auth/presentation/decorators.js';
+import { RequireScope, Roles } from '../../auth/presentation/decorators.js';
 import { OPTIONAL_MODULES, tierIsManaged, type OptionalModule } from '../../system/domain/optional-module.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../domain/ports/tenant.repository.js';
 import { TenantId } from './tenant-context.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 
 @Controller('tenants')
+@RequireScope()
 export class TenantsController {
   constructor(
     @Inject(TENANT_REPOSITORY) private readonly tenants: TenantRepository,

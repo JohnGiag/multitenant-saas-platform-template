@@ -37,7 +37,9 @@ async function seed(runId) {
 }
 
 // What PrismaTenantRepository.delete removes, without its hooks: the tests leave no files or jobs behind.
-async function cleanup(tenantIds) {
+async function cleanup(liveTenantIds) {
+  const sandboxes = await db.tenant.findMany({ where: { sandboxOf: { in: liveTenantIds } }, select: { id: true } });
+  const tenantIds = [...liveTenantIds, ...sandboxes.map((s) => s.id)];
   const where = { tenantId: { in: tenantIds } };
   await db.$transaction([
     db.outboxEvent.deleteMany({ where }),
@@ -47,7 +49,8 @@ async function cleanup(tenantIds) {
     db.apiKey.deleteMany({ where }),
     db.invitation.deleteMany({ where }),
     db.user.deleteMany({ where }),
-    db.tenant.deleteMany({ where: { id: { in: tenantIds } } }),
+    db.tenant.deleteMany({ where: { sandboxOf: { in: liveTenantIds } } }),
+    db.tenant.deleteMany({ where: { id: { in: liveTenantIds } } }),
   ]);
 }
 

@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { expectAccessible, fixtures, sessionFile, signIn } from './fixtures';
 
-async function createApiKey(page: Page, name: string): Promise<string> {
-  await page.goto('/api-keys');
+async function createApiKey(page: Page, name: string, open = true): Promise<string> {
+  if (open) await page.goto('/api-keys');
   await page.getByLabel('Name').fill(name);
   await page.getByRole('button', { name: 'Create key' }).click();
   // Filtered: Next.js's route announcer is a role="alert" on every page too.
@@ -29,7 +29,7 @@ test.describe('TenantAdmin', () => {
   test('creates an API key that is shown once, then revokes it', async ({ page }) => {
     const name = `e2e-key-${Date.now()}`;
     const key = await createApiKey(page, name);
-    expect(key).toMatch(/^eak_[0-9a-f]{12}_[A-Za-z0-9_-]{43}$/);
+    expect(key).toMatch(/^sk_live_[0-9a-f]{12}_[A-Za-z0-9_-]{43}$/);
     // The alert with the key is part of the page too.
     await expectAccessible(page);
 
@@ -42,6 +42,38 @@ test.describe('TenantAdmin', () => {
     page.once('dialog', (dialog) => dialog.accept());
     await row.getByRole('button', { name: 'Revoke' }).click();
     await expect(row.getByText('Revoked')).toBeVisible();
+  });
+
+  test('limits a key to the scopes ticked', async ({ page }) => {
+    const name = `e2e-scoped-${Date.now()}`;
+    await page.goto('/api-keys');
+    await page.getByRole('checkbox', { name: 'write' }).click();
+    await createApiKey(page, name, false);
+    await expect(page.getByRole('row').filter({ hasText: name }).getByRole('cell', { name: 'read', exact: true })).toBeVisible();
+  });
+
+  test('switches to test mode: its keys and pages are kept apart from the live ones', async ({ page }) => {
+    const live = `e2e-live-${Date.now()}`;
+    const inTest = `e2e-test-${Date.now()}`;
+    await createApiKey(page, live);
+
+    await page.getByRole('button', { name: 'Test mode' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'working on test data' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Test mode' })).toHaveAttribute('aria-pressed', 'true');
+    await expectAccessible(page);
+    await expect(page.getByRole('link', { name: 'Billing' })).toBeHidden();
+    await expect(page.getByRole('link', { name: 'Users' })).toBeHidden();
+    expect((await page.goto('/billing'))?.status()).toBe(404);
+
+    expect(await createApiKey(page, inTest)).toMatch(/^sk_test_/);
+    await expectAccessible(page);
+    await expect(page.getByRole('row').filter({ hasText: live })).toBeHidden();
+
+    await page.getByRole('button', { name: 'Test mode' }).click();
+    await expect(page.getByRole('button', { name: 'Test mode' })).toHaveAttribute('aria-pressed', 'false');
+    await page.goto('/api-keys');
+    await expect(page.getByRole('row').filter({ hasText: live })).toBeVisible();
+    await expect(page.getByRole('row').filter({ hasText: inTest })).toBeHidden();
   });
 
   test('filters the audit log by actor', async ({ page }) => {

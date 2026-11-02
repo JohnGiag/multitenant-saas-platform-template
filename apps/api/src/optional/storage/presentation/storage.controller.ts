@@ -31,7 +31,7 @@ import {
 } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { CurrentPrincipal, Roles } from '../../../modules/auth/presentation/decorators.js';
+import { CurrentPrincipal, RequireScope, Roles } from '../../../modules/auth/presentation/decorators.js';
 import { TenantId } from '../../../modules/tenancy/presentation/tenant-context.js';
 import { isTenantObjectKey, newObjectKey } from '../domain/object-key.js';
 import {
@@ -48,6 +48,7 @@ const KeyPipe = new ZodValidationPipe(StorageKeyQuerySchema);
 
 // Files are tenant business data: SuperAdmin stays out. The bytes never pass through here.
 @Controller('storage')
+@RequireScope()
 export class StorageController {
   constructor(@Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider) {}
 

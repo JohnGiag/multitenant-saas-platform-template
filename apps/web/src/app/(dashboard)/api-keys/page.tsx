@@ -1,4 +1,4 @@
-import type { ApiKeySummary, CursorPage } from '@repo/shared-types';
+import type { ApiKeySummary, ApiScopeList, CursorPage } from '@repo/shared-types';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
 import { Pager } from '@/components/pager';
@@ -22,9 +22,10 @@ export default async function ApiKeysPage({ searchParams }: PageProps<'/api-keys
   const canManage = me.role === 'TenantAdmin';
   const { cursor } = await searchParams;
   const current = typeof cursor === 'string' ? cursor : undefined;
-  const keys = await api<CursorPage<ApiKeySummary>>(
-    `/api-keys?${new URLSearchParams({ limit: String(PAGE_SIZE), ...(current && { cursor: current }) })}`,
-  );
+  const [keys, { scopes }] = await Promise.all([
+    api<CursorPage<ApiKeySummary>>(`/api-keys?${new URLSearchParams({ limit: String(PAGE_SIZE), ...(current && { cursor: current }) })}`),
+    api<ApiScopeList>('/api-keys/scopes'),
+  ]);
 
   return (
     <div className="grid max-w-5xl gap-6">
@@ -39,7 +40,7 @@ export default async function ApiKeysPage({ searchParams }: PageProps<'/api-keys
             <CardDescription>{t('apiKeys.createText')}</CardDescription>
           </CardHeader>
           <CardContent>
-            <CreateApiKeyForm />
+            <CreateApiKeyForm scopes={scopes} />
           </CardContent>
         </Card>
       )}
@@ -62,6 +63,7 @@ export default async function ApiKeysPage({ searchParams }: PageProps<'/api-keys
                   <TableHead scope="col">{t('common.name')}</TableHead>
                   <TableHead scope="col">{t('apiKeys.prefix')}</TableHead>
                   <TableHead scope="col">{t('common.role')}</TableHead>
+                  <TableHead scope="col">{t('apiKeys.scopes')}</TableHead>
                   <TableHead scope="col">{t('common.created')}</TableHead>
                   <TableHead scope="col">{t('common.status')}</TableHead>
                   {canManage && <TableHead scope="col">{t('common.actions')}</TableHead>}
@@ -73,6 +75,7 @@ export default async function ApiKeysPage({ searchParams }: PageProps<'/api-keys
                     <TableCell className="font-medium">{k.name}</TableCell>
                     <TableCell className="font-mono">{k.prefix}</TableCell>
                     <TableCell>{k.role}</TableCell>
+                    <TableCell>{k.scopes.join(', ')}</TableCell>
                     <TableCell>
                       <time dateTime={k.createdAt}>{k.createdAt.slice(0, 10)}</time>
                     </TableCell>

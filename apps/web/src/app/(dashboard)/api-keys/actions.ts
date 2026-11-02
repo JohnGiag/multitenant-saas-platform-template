@@ -10,7 +10,7 @@ import { getT } from '@/lib/i18n';
 export type CreateApiKeyState = (NonNullable<FormState> & { key?: string; name?: string }) | undefined;
 
 export async function createApiKey(_: CreateApiKeyState, form: FormData): Promise<CreateApiKeyState> {
-  const parsed = CreateApiKeySchema.safeParse({ name: form.get('name'), role: form.get('role') || undefined });
+  const parsed = CreateApiKeySchema.safeParse({ name: form.get('name'), role: form.get('role') || undefined, scopes: form.getAll('scopes') });
   if (!parsed.success) return invalid(parsed.error);
   let created: CreatedApiKey;
   try {

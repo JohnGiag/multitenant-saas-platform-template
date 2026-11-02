@@ -9,13 +9,14 @@ import { useT } from '@/components/i18n-provider';
 
 // `roles`: only shown to these (the API enforces the same; this just hides links that would 404).
 // `capability`: only while that optional module is installed and enabled for the tenant. `label` is a message key.
-const LINKS: { href: string; label: string; icon: typeof Settings; roles?: Role[]; capability?: string }[] = [
+// `live`: not in test mode, where a tenant has no members or plan of its own.
+const LINKS: { href: string; label: string; icon: typeof Settings; roles?: Role[]; capability?: string; live?: boolean }[] = [
   { href: '/', label: 'nav.overview', icon: LayoutDashboard },
   { href: '/tenants', label: 'nav.tenants', icon: Building2, roles: ['SuperAdmin'] },
-  { href: '/users', label: 'nav.users', icon: Users, roles: ['SuperAdmin', 'TenantAdmin', 'Auditor'] },
+  { href: '/users', label: 'nav.users', icon: Users, roles: ['SuperAdmin', 'TenantAdmin', 'Auditor'], live: true },
   { href: '/api-keys', label: 'nav.apiKeys', icon: KeyRound, roles: ['TenantAdmin', 'Auditor'] },
   { href: '/files', label: 'nav.files', icon: FileText, roles: ['TenantAdmin', 'User', 'Auditor'], capability: 'storage' },
-  { href: '/billing', label: 'nav.billing', icon: CreditCard, roles: ['TenantAdmin', 'Auditor'], capability: 'billing' },
+  { href: '/billing', label: 'nav.billing', icon: CreditCard, roles: ['TenantAdmin', 'Auditor'], capability: 'billing', live: true },
   { href: '/webhooks', label: 'nav.webhooks', icon: Webhook, roles: ['TenantAdmin', 'Auditor'], capability: 'webhooks' },
   { href: '/notifications', label: 'nav.notifications', icon: Bell },
   { href: '/audit', label: 'nav.audit', icon: ScrollText, roles: ['SuperAdmin', 'TenantAdmin', 'Auditor'] },
@@ -23,10 +24,10 @@ const LINKS: { href: string; label: string; icon: typeof Settings; roles?: Role[
   { href: '/account', label: 'nav.account', icon: UserRound },
 ];
 
-export function SidebarNav({ role, features }: { role: Role; features: string[] }) {
+export function SidebarNav({ role, features, testMode }: { role: Role; features: string[]; testMode: boolean }) {
   const t = useT();
   const pathname = usePathname();
-  const visible = LINKS.filter((l) => (!l.roles || l.roles.includes(role)) && (!l.capability || features.includes(l.capability)));
+  const visible = LINKS.filter((l) => (!l.roles || l.roles.includes(role)) && (!l.capability || features.includes(l.capability)) && !(testMode && l.live));
   return (
     <nav aria-label={t('nav.main')} className="px-3 pb-4">
       <ul className="flex flex-wrap gap-1 md:flex-col">

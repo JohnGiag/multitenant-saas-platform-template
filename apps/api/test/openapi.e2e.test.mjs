@@ -40,7 +40,7 @@ test('every route the API serves is documented, with a summary, a success respon
 
 test('request schemas come from the Zod pipes that validate them', () => {
   const create = op('post', '/v1/api-keys').requestBody.content['application/json'].schema;
-  assert.deepEqual(Object.keys(create.properties).sort(), ['name', 'role']);
+  assert.deepEqual(Object.keys(create.properties).sort(), ['name', 'role', 'scopes']);
   // SuperAdmin is never assignable: the schema says so too.
   assert.ok(!create.properties.role.enum.includes('SuperAdmin'));
 

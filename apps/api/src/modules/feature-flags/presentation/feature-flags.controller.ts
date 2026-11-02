@@ -2,7 +2,7 @@ import { Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, Pu
 import { FeatureFlagKeySchema, FeatureFlagResponseSchema, type FeatureFlagResponse } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { Roles } from '../../auth/presentation/decorators.js';
+import { RequireScope, Roles } from '../../auth/presentation/decorators.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { FeatureFlags } from '../domain/feature-flags.js';
 import { FEATURE_FLAG_REPOSITORY, type FeatureFlagRepository } from '../domain/ports/feature-flag.repository.js';
@@ -11,6 +11,7 @@ import { FEATURE_FLAG_REPOSITORY, type FeatureFlagRepository } from '../domain/p
 // paid features. `:id` is the flag and on/off are separate routes because the audit log keeps only the `:id` and the
 // route pattern, so it shows which flag went which way.
 @Controller('feature-flags')
+@RequireScope()
 export class FeatureFlagsController {
   constructor(
     private readonly flags: FeatureFlags,

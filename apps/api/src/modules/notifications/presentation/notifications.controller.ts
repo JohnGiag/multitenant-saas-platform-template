@@ -20,11 +20,12 @@ import { Observable } from 'rxjs';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { unavailableOnTimeout } from '../../../common/unavailable-on-timeout.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { CurrentPrincipal, Roles } from '../../auth/presentation/decorators.js';
+import { CurrentPrincipal, RequireScope, Roles } from '../../auth/presentation/decorators.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { NOTIFICATION_SERVICE, type NotificationService } from '../domain/ports/notification.service.js';
 
 @Controller('notifications')
+@RequireScope()
 export class NotificationsController {
   constructor(@Inject(NOTIFICATION_SERVICE) private readonly notifications: NotificationService) {}
 

@@ -7,11 +7,12 @@ export class PrismaFeatureFlagRepository implements FeatureFlagRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async load(tenantId: string): Promise<TenantFeatureState | null> {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { tier: true, featureFlags: { select: { key: true, enabled: true } } },
-    });
-    return tenant && { tier: tenant.tier, overrides: new Map(tenant.featureFlags.map((f) => [f.key, f.enabled])) };
+    const state = { tier: true, featureFlags: { select: { key: true, enabled: true } } } as const;
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { ...state, liveTenant: { select: state } } });
+    if (!tenant) return null;
+    // A sandbox has no plan of its own: it may use what its live tenant may.
+    const { tier, featureFlags } = tenant.liveTenant ?? tenant;
+    return { tier, overrides: new Map(featureFlags.map((f) => [f.key, f.enabled])) };
   }
 
   async setOverride(tenantId: string, key: string, enabled: boolean): Promise<void> {

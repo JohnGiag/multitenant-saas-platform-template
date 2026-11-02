@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { test } from 'node:test';
 import { decideRefresh, parseRefreshToken, signRefreshToken } from '../dist/modules/auth/domain/refresh-token.js';
-import { decideAccess } from '../dist/modules/auth/domain/access-policy.js';
+import { decideAccess, METHOD_SCOPE } from '../dist/modules/auth/domain/access-policy.js';
 import {
   apiKeySecretMatches,
   generateApiKey,
@@ -65,10 +65,28 @@ test('self-service routes let an Auditor change its own account, nothing else', 
   assert.equal(decideAccess(as('Auditor'), ['User'], 'PUT', true), 'forbidden');
 });
 
+test('an API key needs the scope of its route, on top of its role', () => {
+  const key = (scopes, role = 'TenantAdmin') => ({ ...as(role), kind: 'apiKey', scopes });
+  const allowed = ['TenantAdmin'];
+  assert.equal(decideAccess(key(['read', 'write']), allowed, 'GET'), 'forbidden', 'a route with no scope is closed to keys');
+  assert.equal(decideAccess(as('TenantAdmin'), allowed, 'GET'), 'allow', 'and only to keys');
+
+  assert.equal(decideAccess(key(['read']), allowed, 'GET', false, METHOD_SCOPE), 'allow');
+  assert.equal(decideAccess(key(['read']), allowed, 'POST', false, METHOD_SCOPE), 'forbidden');
+  assert.equal(decideAccess(key(['write']), allowed, 'POST', false, METHOD_SCOPE), 'allow');
+  assert.equal(decideAccess(key(['write']), allowed, 'GET', false, METHOD_SCOPE), 'forbidden');
+
+  assert.equal(decideAccess(key(['ingest']), allowed, 'POST', false, 'ingest'), 'allow');
+  assert.equal(decideAccess(key(['read', 'write']), allowed, 'POST', false, 'ingest'), 'forbidden');
+  assert.equal(decideAccess(key(['ingest'], 'User'), allowed, 'POST', false, 'ingest'), 'forbidden', 'a scope never widens the role');
+  assert.equal(decideAccess(key(['write'], 'Auditor'), ['Auditor'], 'POST', false, METHOD_SCOPE), 'forbidden', 'an Auditor stays read-only');
+});
+
 test('API keys round-trip and reject tampering', () => {
   const key = generateApiKey();
-  assert.match(key.raw, /^eak_[0-9a-f]{12}_[A-Za-z0-9_-]{43}$/);
-  assert.deepEqual(parseApiKey(key.raw), { prefix: key.prefix, secret: key.secret });
+  assert.match(key.raw, /^sk_live_[0-9a-f]{12}_[A-Za-z0-9_-]{43}$/);
+  assert.deepEqual(parseApiKey(key.raw), { mode: 'live', prefix: key.prefix, secret: key.secret });
+  assert.equal(parseApiKey(generateApiKey('test').raw).mode, 'test');
 
   const stored = hashApiKeySecret(key.secret);
   assert.equal(stored.length, 32);
@@ -79,7 +97,7 @@ test('API keys round-trip and reject tampering', () => {
 
 test('malformed API keys do not parse', () => {
   const { raw } = generateApiKey();
-  for (const bad of ['', 'eak_', raw.slice(0, -1), `${raw}x`, raw.replace('eak_', 'xak_'), ` ${raw}`]) {
+  for (const bad of ['', 'sk_live_', raw.slice(0, -1), `${raw}x`, raw.replace('sk_live_', 'sk_prod_'), ` ${raw}`]) {
     assert.equal(parseApiKey(bad), null, JSON.stringify(bad));
   }
 });

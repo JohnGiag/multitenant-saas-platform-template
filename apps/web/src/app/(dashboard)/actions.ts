@@ -2,12 +2,13 @@
 
 import { FeatureFlagKeySchema, IdSchema, IntegrationProviderSchema, UpdateTenantSchema, UpsertTenantIntegrationSchema } from '@repo/shared-types';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { api, apiFailure } from '@/lib/api';
 import { invalid, type FormState } from '@/lib/form-state';
 import { getT } from '@/lib/i18n';
 import { INTEGRATION_FIELDS } from '@/lib/integration-fields';
-import { setTenantOverride } from '@/lib/session';
+import { setTenantOverride, setTestMode } from '@/lib/session';
 
 const OverrideSchema = z.enum(['default', 'on', 'off']);
 
@@ -15,6 +16,13 @@ const OverrideSchema = z.enum(['default', 'on', 'off']);
 export async function switchTenant(tenantId: string | null): Promise<void> {
   await setTenantOverride(tenantId === null ? null : IdSchema.parse(tenantId));
   revalidatePath('/', 'layout');
+}
+
+// Back to the overview: the page open now may not exist on the other side (billing has no test mode).
+export async function switchTestMode(on: boolean): Promise<void> {
+  await setTestMode(on);
+  revalidatePath('/', 'layout');
+  redirect('/');
 }
 
 export async function renameTenant(_: FormState, form: FormData): Promise<FormState> {

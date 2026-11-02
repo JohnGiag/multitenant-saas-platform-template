@@ -12,7 +12,7 @@ import {
 } from '@repo/shared-types';
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { Roles } from '../../auth/presentation/decorators.js';
+import { RequireScope, Roles } from '../../auth/presentation/decorators.js';
 import { OPTIONAL_MODULES, type OptionalModule } from '../../system/domain/optional-module.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { INTEGRATION_SERVICE, type IntegrationService } from '../domain/ports/integration.service.js';
@@ -22,6 +22,7 @@ const ProviderPipe = new ZodValidationPipe(IntegrationProviderSchema);
 // Responses only ever carry masked config; secrets are write-only through this API.
 // A tenant's own admins only: SuperAdmin manages tenants and their users, not their secrets.
 @Controller('integrations')
+@RequireScope()
 @Roles('TenantAdmin')
 export class IntegrationsController {
   constructor(

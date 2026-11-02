@@ -105,7 +105,8 @@ export async function cleanup(apps, tenantIds) {
     await queue.obliterate({ force: true }).catch(() => {});
     await queue.close();
   }
-  const tenantId = { in: tenantIds };
+  const sandboxes = await db.tenant.findMany({ where: { sandboxOf: { in: tenantIds } }, select: { id: true } });
+  const tenantId = { in: [...tenantIds, ...sandboxes.map((s) => s.id)] };
   await db.outboxEvent.deleteMany({ where: { tenantId } });
   await db.auditLog.deleteMany({ where: { tenantId } });
   await db.tenantIntegration.deleteMany({ where: { tenantId } });
@@ -114,6 +115,7 @@ export async function cleanup(apps, tenantIds) {
   await db.apiKey.deleteMany({ where: { tenantId } });
   // Also removes their push devices and password resets (cascade).
   await db.user.deleteMany({ where: { tenantId } });
-  await db.tenant.deleteMany({ where: { id: tenantId } });
+  await db.tenant.deleteMany({ where: { sandboxOf: { in: tenantIds } } });
+  await db.tenant.deleteMany({ where: { id: { in: tenantIds } } });
   await db.$disconnect();
 }

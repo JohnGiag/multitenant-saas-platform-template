@@ -33,8 +33,14 @@ model Tenant {
   clerkOrgId String?   @unique @map("clerk_org_id")
   // When Clerk created the event the name came from: an older one, delivered late, changes nothing.
   clerkEventAt DateTime? @map("clerk_event_at") @db.Timestamptz(3)
+  // Test mode: the live tenant this sandbox belongs to. Test keys and test data live here, so every isolation rule
+  // applies unchanged. Null for a live tenant, which has at most one sandbox.
+  sandboxOf String?    @unique @map("sandbox_of") @db.Uuid
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  liveTenant Tenant? @relation("Sandbox", fields: [sandboxOf], references: [id], onDelete: Restrict)
+  sandbox    Tenant? @relation("Sandbox")
 
   users        User[]
   integrations TenantIntegration[]
@@ -129,6 +135,8 @@ model ApiKey {
   // SHA-256 of the secret part; the secret is random, so a slow hash adds nothing.
   secretHash Bytes     @map("secret_hash")
   role       Role      @default(User)
+  // Narrow the role, never widen it (see decideAccess).
+  scopes     String[]
   revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)

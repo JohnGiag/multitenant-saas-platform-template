@@ -34,7 +34,7 @@ import {
 import { ApiDoc } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { ACCESS_REVOCATIONS, type AccessRevocations } from '../../auth/domain/ports/access-revocations.port.js';
-import { CurrentPrincipal, Roles, SelfService } from '../../auth/presentation/decorators.js';
+import { CurrentPrincipal, RequireScope, Roles, SelfService } from '../../auth/presentation/decorators.js';
 import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/rate-limiter.port.js';
 import { passwordChangeKey } from '../../rate-limit/domain/rate-limit-policy.js';
 import { clearAccountAttempts, countOwnAttempt } from '../../rate-limit/presentation/account-attempts.js';
@@ -45,6 +45,7 @@ import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 // Members of the current tenant (a SuperAdmin picks the tenant with X-Tenant-Id). New members join
 // through invitations (InvitationsController), so nobody but the user ever chooses their password.
 @Controller('users')
+@RequireScope()
 @Roles('SuperAdmin', 'TenantAdmin')
 export class UsersController {
   constructor(

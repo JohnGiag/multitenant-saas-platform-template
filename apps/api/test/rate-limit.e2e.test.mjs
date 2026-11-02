@@ -55,7 +55,7 @@ test('the tier sets the limit', async () => {
 test('rejected credentials are limited per client IP too', async () => {
   const ip = randomIp();
   // Well-formed, so each one costs a database lookup before it is refused.
-  const fakeKey = `eak_${'0'.repeat(12)}_${'A'.repeat(43)}`;
+  const fakeKey = `sk_live_${'0'.repeat(12)}_${'A'.repeat(43)}`;
   for (let i = 0; i < PUBLIC_LIMIT; i++) assert.equal((await call('GET', '/auth/me', { apiKey: fakeKey, ip })).status, 401);
   const blocked = await call('GET', '/auth/me', { apiKey: fakeKey, ip });
   assert.equal(blocked.status, 429);

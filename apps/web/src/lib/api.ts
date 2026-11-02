@@ -16,7 +16,7 @@ import { cache } from 'react';
 import { clientIpFrom, parseProxyHops } from './client-ip';
 import { PAGE_HEADER } from './session-page';
 import type { FormState } from './form-state';
-import { endSession, getRefreshToken, getTenantOverride, getToken, renewSession } from './session';
+import { endSession, getRefreshToken, getTenantOverride, getTestMode, getToken, renewSession } from './session';
 
 export const API_URL = process.env.API_URL ?? 'http://localhost:3000';
 export const TIMEOUT_MS = 10_000;
@@ -74,8 +74,13 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   const token = await getToken();
   if (!token) return leave();
   const tenant = options.ownTenant ? undefined : await getTenantOverride();
+  const testMode = !options.ownTenant && (await getTestMode());
   try {
-    return await request<T>(path, options, { authorization: `Bearer ${token}`, ...(tenant && { 'x-tenant-id': tenant }) });
+    return await request<T>(path, options, {
+      authorization: `Bearer ${token}`,
+      ...(tenant && { 'x-tenant-id': tenant }),
+      ...(testMode && { 'x-sandbox': 'true' }),
+    });
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) return leave();
     throw error;

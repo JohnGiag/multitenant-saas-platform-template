@@ -35,7 +35,7 @@ import {
 import { ApiDoc } from '../../../common/api-doc.js';
 import { unavailableOnTimeout } from '../../../common/unavailable-on-timeout.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { Roles } from '../../../modules/auth/presentation/decorators.js';
+import { RequireScope, Roles } from '../../../modules/auth/presentation/decorators.js';
 import { RequireFeature } from '../../../modules/feature-flags/presentation/require-feature.js';
 import { TenantId } from '../../../modules/tenancy/presentation/tenant-context.js';
 import {
@@ -49,6 +49,7 @@ import {
 // Where the tenant's events go. Its own admins manage endpoints and Auditors read them; SuperAdmin stays out (the
 // events are the tenant's business data, and the secrets sign in its name).
 @Controller('webhooks')
+@RequireScope()
 @Roles('TenantAdmin')
 @RequireFeature(WEBHOOKS_FEATURE)
 export class WebhooksController {

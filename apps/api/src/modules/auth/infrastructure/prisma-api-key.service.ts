@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ApiKeySummary, CreateApiKeyDto, CreatedApiKey, CursorPage, Principal } from '@repo/shared-types';
+import { CORE_API_SCOPES, type ApiKeySummary, type CreateApiKeyDto, type CreatedApiKey, type CursorPage, type Principal } from '@repo/shared-types';
 import { keysetArgs, keysetPage, type KeysetCursor } from '../../../common/keyset.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
@@ -11,11 +11,12 @@ import type { ApiKeyService } from '../domain/ports/api-key.port.js';
 export class PrismaApiKeyService implements ApiKeyService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(tenantId: string, { name, role }: CreateApiKeyDto): Promise<CreatedApiKey> {
-    const key = generateApiKey();
+  async create(tenantId: string, { name, role, scopes = [...CORE_API_SCOPES] }: CreateApiKeyDto): Promise<CreatedApiKey> {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { sandboxOf: true } });
+    const key = generateApiKey(tenant.sandboxOf ? 'test' : 'live');
     const row = await this.prisma.$transaction(async (tx) => {
       const created = await tx.apiKey.create({
-        data: { tenantId, name, role, prefix: key.prefix, secretHash: hashApiKeySecret(key.secret) },
+        data: { tenantId, name, role, scopes: [...new Set(scopes)], prefix: key.prefix, secretHash: hashApiKeySecret(key.secret) },
       });
       await recordEvent(tx, tenantId, 'api_key.created', { apiKeyId: created.id, role: created.role });
       return created;
@@ -24,6 +25,7 @@ export class PrismaApiKeyService implements ApiKeyService {
       id: row.id,
       name: row.name,
       role: row.role,
+      scopes: row.scopes,
       prefix: row.prefix,
       key: key.raw,
       createdAt: row.createdAt.toISOString(),
@@ -37,7 +39,7 @@ export class PrismaApiKeyService implements ApiKeyService {
       where: { tenantId, ...(page.where as Prisma.ApiKeyWhereInput) },
       orderBy: page.orderBy as Prisma.ApiKeyOrderByWithRelationInput[],
       take: limit + 1,
-      select: { id: true, name: true, role: true, prefix: true, createdAt: true, revokedAt: true },
+      select: { id: true, name: true, role: true, scopes: true, prefix: true, createdAt: true, revokedAt: true },
     });
     const items: ApiKeySummary[] = rows.map((r) => ({
       ...r,
@@ -63,9 +65,13 @@ export class PrismaApiKeyService implements ApiKeyService {
     if (!parsed) return null;
     const row = await this.prisma.apiKey.findUnique({
       where: { prefix: parsed.prefix },
-      include: { tenant: { select: { tier: true } } },
+      include: { tenant: { select: { tier: true, sandboxOf: true, liveTenant: { select: { tier: true } } } } },
     });
     if (!row || row.revokedAt || !apiKeySecretMatches(parsed.secret, row.secretHash)) return null;
-    return { kind: 'apiKey', id: row.id, tenantId: row.tenantId, role: row.role, tier: row.tenant.tier };
+    const { tier, sandboxOf, liveTenant } = row.tenant;
+    const mode = sandboxOf ? 'test' : 'live';
+    if (parsed.mode !== mode) return null;
+    // A sandbox has no plan of its own: it gets its live tenant's limits.
+    return { kind: 'apiKey', id: row.id, tenantId: row.tenantId, role: row.role, tier: liveTenant?.tier ?? tier, scopes: row.scopes, mode };
   }
 }

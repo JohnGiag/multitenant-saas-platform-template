@@ -29,10 +29,11 @@ import type { Role } from '@repo/shared-types';
 import { z } from 'zod';
 import { API_DOC_KEY, type ApiDocMetadata } from '../../../common/api-doc.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
-import { IS_PUBLIC_KEY, ROLES_KEY, SELF_SERVICE_KEY } from '../../auth/presentation/decorators.js';
+import { scopeFor } from '../../auth/domain/access-policy.js';
+import { IS_PUBLIC_KEY, ROLES_KEY, SCOPE_KEY, SELF_SERVICE_KEY } from '../../auth/presentation/decorators.js';
 import { LocalAuthOnlyGuard } from '../../auth/presentation/local-auth-only.js';
 import { FEATURE_KEY } from '../../feature-flags/presentation/require-feature.js';
-import { tenantIdOf } from '../../tenancy/presentation/tenant-context.js';
+import { LIVE_ONLY_KEY, tenantIdOf } from '../../tenancy/presentation/tenant-context.js';
 
 // The OpenAPI document at /docs (Swagger UI) and /docs/openapi.json. Built from what the routes already declare: the
 // Zod schemas their pipes validate with (body, query, path parameters), @Roles/@Public/@LocalAuthOnly/@RequireFeature
@@ -183,9 +184,15 @@ function describeRoute(controller: Controller, key: string, descriptor: Property
     decorators.push(ApiBearerAuth(), ApiSecurity('apiKey'));
     if (roles) decorators.push(ApiExtension('x-roles', roles));
     notes.push(`**Roles:** ${roles?.join(', ') ?? 'none'}`);
+    const scope = meta<string>(SCOPE_KEY);
+    notes.push(scope ? `**API keys:** need the \`${scopeFor(scope, RequestMethod[method])}\` scope.` : '**API keys:** not accepted.');
     if (meta<boolean>(SELF_SERVICE_KEY)) notes.push("The caller's own account: open to `Auditor` too, although it writes.");
     if (tenantScoped && roles?.includes('SuperAdmin')) {
       decorators.push(ApiHeader({ name: 'X-Tenant-Id', required: false, description: 'SuperAdmin only: act on this tenant instead of your own.' }));
+    }
+    if (meta<boolean>(LIVE_ONLY_KEY)) notes.push('Live data only: `403` in test mode.');
+    else if (tenantScoped && roles?.some((role) => role !== 'SuperAdmin')) {
+      decorators.push(ApiHeader({ name: 'X-Sandbox', required: false, description: "`true`: a signed-in member acts on the tenant's test data. API keys carry their mode in the key instead." }));
     }
   }
   if (localOnly) notes.push('Local auth mode only: `409` when `AUTH_PROVIDER=clerk`.');

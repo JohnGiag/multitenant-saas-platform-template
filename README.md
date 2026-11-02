@@ -31,7 +31,7 @@ Tenants, sign-in, roles, API keys, encrypted per-tenant secrets, rate limits, ba
 | **Multi-tenancy** | A `tenant_id` on every tenant-owned row and in every query. UUIDv7 ids, never auto-increment. Deleting a tenant erases everything it owns, including queued jobs and files. |
 | **Two auth modes** | Built-in: JWT with Argon2id passwords, and sign-in with just email and password (never a tenant ID). Or Clerk: its organizations become tenants. One setting switches the whole deployment. |
 | **RBAC** | `SuperAdmin`, `TenantAdmin`, `User` and a read-only `Auditor`, denied by default and enforced by guards. |
-| **API keys** | For headless clients: shown once, stored as a hash, scoped to a tenant, revocable. |
+| **API keys** | For headless clients: shown once, stored as a hash, scoped to a tenant, revocable, limited to the scopes they need. Test keys (`sk_test_`) work on a separate sandbox of the tenant. |
 | **BYOK integrations** | Tenants bring their own Resend, Firebase or R2 credentials, encrypted with AES-256-GCM and never returned by the API. |
 | **Rate limiting** | Redis sliding window per tenant, caller and tier, plus per-account login limits. Answers `429` with `Retry-After`. |
 | **Background jobs** | BullMQ with retries, exponential backoff and a dead-letter queue. Workers load secrets only when a job runs. |
@@ -216,6 +216,8 @@ Access is denied by default: a route answers only the roles it lists, and `Super
 - **Staying signed in:** `POST /v1/auth/refresh` swaps the refresh token for a new pair, and the session stays alive while it is used at least every 30 days. Each refresh token works once. Parallel requests with the same one are safe for 30 seconds and get the same answer; after that a replay is treated as theft and ends the session. `POST /v1/auth/logout` ends it. Refresh tokens are derived from the session, so the database holds none.
 - **Revocation is immediate.** Each request checks short-lived Redis keys, so these stop existing access tokens at once: signing out or a replay (that session), a password change or reset (every session of the account), a role change or removal (the user, who keeps the session and refreshes into the new role), a tier change or a deleted tenant (everyone in it). While Redis is down the check is skipped, and tokens simply run out within 15 minutes.
 - **API keys** (`X-API-Key: <key>`) are for a tenant's own servers and scripts. Not to be confused with the BYOK keys under Settings.
+- **Scopes** limit a key below its role. Core has `read` and `write`; a module declares more with `ApiScopes.declare('ingest')` and opens a route with `@RequireScope('ingest')`. A route without `@RequireScope` is closed to keys. Scopes never widen a role.
+- **Test mode:** the dashboard's Test mode button works on the tenant's sandbox, and keys made there start with `sk_test_`. Live and test data never mix. API callers signed in as a member send `X-Sandbox: true`. Invitations and billing are live only.
 
 ### Users and invitations
 
