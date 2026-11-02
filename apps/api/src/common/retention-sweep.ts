@@ -3,8 +3,8 @@ import { Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nest
 const EVERY_MS = 60 * 60 * 1000;
 
 // Deletes rows past their retention, at startup and then hourly. A timer rather than a job: it has no tenant to put in a
-// payload, needs no Redis, and running on every instance at once only finds nothing left to delete. Subclasses delete
-// by age alone (see CLAUDE.md): they read nothing and return nothing.
+// payload, needs no Redis, and running on every instance at once only finds nothing left to delete. A retention sweep
+// deletes by age alone (see CLAUDE.md): it reads nothing and returns nothing. UsageFlush shares the timer, not that rule.
 export abstract class RetentionSweep implements OnApplicationBootstrap, OnModuleDestroy {
   protected readonly logger = new Logger(this.constructor.name);
   private timer?: NodeJS.Timeout;
