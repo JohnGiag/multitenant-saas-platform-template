@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { FeatureFlagDefinitionSchema, IntegrationProviderSchema } from '@repo/shared-types';
+import { FeatureFlagDefinitionSchema, IntegrationProviderSchema, MeterDefinitionSchema } from '@repo/shared-types';
 import { z } from 'zod';
 import type { OptionalModule } from '../domain/optional-module.js';
 
@@ -19,6 +19,7 @@ const DescriptorSchema = z.object({
     .optional(),
   ownsTenantTier: z.boolean().optional(),
   featureFlags: z.array(FeatureFlagDefinitionSchema).optional(),
+  meters: z.array(MeterDefinitionSchema).optional(),
   module: z.custom<OptionalModule['module']>((value) => typeof value === 'function'),
 });
 
@@ -28,6 +29,7 @@ export async function loadOptionalModules(dir = DEFAULT_DIR): Promise<OptionalMo
   if (!existsSync(dir)) return [];
   const modules: OptionalModule[] = [];
   const flagKeys = new Set<string>();
+  const meterKeys = new Set<string>();
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const entryFile = join(dir, entry.name, 'index.js');
@@ -44,6 +46,10 @@ export async function loadOptionalModules(dir = DEFAULT_DIR): Promise<OptionalMo
     for (const { key } of parsed.data.featureFlags ?? []) {
       if (flagKeys.has(key)) throw new Error(`Feature flag "${key}" is declared twice`);
       flagKeys.add(key);
+    }
+    for (const { key } of parsed.data.meters ?? []) {
+      if (meterKeys.has(key)) throw new Error(`Meter "${key}" is declared twice`);
+      meterKeys.add(key);
     }
     modules.push(parsed.data);
   }

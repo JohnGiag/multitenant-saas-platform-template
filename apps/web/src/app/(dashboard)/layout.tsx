@@ -1,5 +1,6 @@
 import { OrganizationSwitcher, UserButton } from '@clerk/nextjs';
-import type { CursorPage, Tenant } from '@repo/shared-types';
+import type { CursorPage, Tenant, UsageList } from '@repo/shared-types';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Brand } from '@/components/brand';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -12,6 +13,7 @@ import { api, getCapabilities, getCurrentTenant, getPrincipal } from '@/lib/api'
 import { CLERK } from '@/lib/auth-mode';
 import { getT } from '@/lib/i18n';
 import { getTenantOverride, getTestMode } from '@/lib/session';
+import { needsAttention } from '@/lib/usage';
 import { signOut } from '../(auth)/actions';
 import { switchTestMode } from './actions';
 
@@ -21,6 +23,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   // layout working if its selected tenant was deleted.
   const features = me.role === 'SuperAdmin' ? [] : (await getCapabilities()).filter((c) => c.enabled).map((c) => c.key);
   const testMode = await getTestMode();
+  // Only for those who may read it, and only once a module declares a meter.
+  const meters = me.role === 'TenantAdmin' || me.role === 'Auditor' ? (await api<UsageList>('/usage')).meters : [];
   return (
     <div className="flex min-h-dvh flex-col md:flex-row">
       <a
@@ -31,7 +35,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       </a>
       <aside className="border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:h-dvh md:w-64 md:shrink-0 md:overflow-y-auto md:border-r md:border-b-0">
         <Brand className="px-6 py-5" />
-        <SidebarNav role={me.role} features={features} testMode={testMode} />
+        <SidebarNav role={me.role} features={meters.length > 0 ? [...features, 'usage'] : features} testMode={testMode} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex min-h-16 flex-wrap items-center justify-between gap-4 border-b bg-background/85 px-4 py-3 backdrop-blur sm:px-6 lg:px-10">
@@ -69,6 +73,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         {testMode && (
           <p role="status" className="border-b bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground sm:px-6 lg:px-10">
             {t('testMode.banner')}
+          </p>
+        )}
+        {needsAttention(meters) && (
+          <p role="status" className="border-b bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground sm:px-6 lg:px-10">
+            <Link href="/usage" className="underline underline-offset-4 outline-none focus-visible:ring-[3px] focus-visible:ring-ring">
+              {t('usage.banner')}
+            </Link>
           </p>
         )}
         {/* *:mx-auto: each page's column sits centred in the space beside the sidebar. */}

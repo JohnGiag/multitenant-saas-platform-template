@@ -5,6 +5,8 @@ import { after, before, test } from 'node:test';
 import { BillingRedirectSchema, BillingStatusSchema } from '@repo/shared-types';
 import { ACCESS_REVOCATIONS } from '../dist/modules/auth/domain/ports/access-revocations.port.js';
 import { TenantEvents } from '../dist/modules/events/domain/tenant-events.js';
+import { UsageMeter } from '../dist/modules/usage/domain/usage-meter.js';
+import { StripeBillingService } from '../dist/optional/billing/infrastructure/stripe-billing.service.js';
 import { PUBLIC_LIMIT } from '../dist/modules/rate-limit/domain/rate-limit-policy.js';
 import { cleanup, db, randomIp, seedTenant, startApp, testQueue, waitFor } from './helpers.mjs';
 
@@ -39,6 +41,7 @@ globalThis.fetch = async (input, init) => {
   if (call.path === '/v1/customers') return Response.json({ id: `cus_${call.idempotencyKey.slice(-12)}` });
   if (call.path === '/v1/checkout/sessions') return Response.json({ url: 'https://checkout.stripe.com/c/pay/cs_test_e2e' });
   if (call.path === '/v1/billing_portal/sessions') return Response.json({ url: 'https://billing.stripe.com/p/session/test_e2e' });
+  if (call.path === '/v1/billing/meter_events') return Response.json({ object: 'billing.meter_event' });
   if (call.method === 'DELETE' && call.path.startsWith('/v1/subscriptions/')) return cancelResponse();
   if (call.method === 'GET' && call.path.startsWith('/v1/checkout/sessions/')) {
     const session = checkoutSessions.get(call.path.split('/').at(-1));
@@ -361,6 +364,43 @@ test('deleting a tenant deletes its Stripe customer first, which ends every subs
   assert.deepEqual(stripeCalls.map((c) => `${c.method} ${c.path}`), [`DELETE /v1/customers/${customer}`]);
   assert.equal(await db.billingAccount.count({ where: { tenantId: tenants.doomed } }), 0, 'its billing row goes by cascade');
   deleteCustomerResponse = () => new Response('{}', { status: 200 });
+});
+
+test('flushed usage reaches Stripe as meter events: only what is new, once, and only for its own customer', async () => {
+  const customer = await customerOf(tenants.a);
+  const usage = app.get(UsageMeter, { strict: false });
+  const record = await db.usageRecord.create({ data: { tenantId: tenants.a, meter: 'events', periodStart: new Date(), quantity: 5 } });
+  const reported = () => db.usageRecord.findUniqueOrThrow({ where: { id: record.id } });
+  const events = () => stripeCalls.filter((c) => c.path === '/v1/billing/meter_events');
+  stripeCalls.length = 0;
+
+  await usage.flushed(await reported());
+  await waitFor(async () => (await reported()).reportedQuantity === 5);
+  assert.deepEqual(
+    { name: events()[0].body.event_name, customer: events()[0].body['payload[stripe_customer_id]'], value: events()[0].body['payload[value]'], id: events()[0].body.identifier },
+    { name: 'events', customer, value: '5', id: `${record.id}-5` },
+  );
+
+  await db.usageRecord.update({ where: { id: record.id }, data: { quantity: 8 } });
+  await usage.flushed(await reported());
+  await waitFor(async () => (await reported()).reportedQuantity === 8);
+  assert.equal(events()[1].body['payload[value]'], '3', 'Stripe sums a meter, so only what is new');
+  assert.equal(events()[1].body.identifier, `${record.id}-8`);
+
+  const billing = app.get(StripeBillingService, { strict: false });
+  await billing.reportUsage(tenants.a, record.id);
+  assert.equal(events().length, 2, 'nothing new, nothing sent');
+
+  await db.usageRecord.update({ where: { id: record.id }, data: { quantity: 9 } });
+  await billing.reportUsage(tenants.b, record.id);
+  assert.equal(events().length, 2, "another tenant's job cannot report this record");
+  assert.equal((await reported()).reportedQuantity, 8);
+
+  const noCustomer = await seedTenant('billing-e2e-no-customer');
+  tenants.noCustomer = noCustomer;
+  const free = await db.usageRecord.create({ data: { tenantId: noCustomer, meter: 'events', periodStart: new Date(), quantity: 1 } });
+  await billing.reportUsage(noCustomer, free.id);
+  assert.equal(events().length, 2, 'no customer, nothing to charge');
 });
 
 test('without STRIPE_* the module is installed but off: no webhook, no checkout, and tiers are set by hand', async () => {

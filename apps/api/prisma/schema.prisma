@@ -57,6 +57,7 @@ model Tenant {
   featureFlags   TenantFeatureFlag[]
   outboxEvents   OutboxEvent[]
   idempotencyKeys IdempotencyKey[]
+  usageRecords   UsageRecord[]
 
   @@map("tenants")
 }
@@ -354,6 +355,22 @@ model IdempotencyKey {
   // For the retention sweep, which works by age alone.
   @@index([createdAt])
   @@map("idempotency_keys")
+}
+
+// What a tenant used of a meter in one hour, copied from Redis every few minutes (modules/usage).
+model UsageRecord {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  meter            String
+  periodStart      DateTime @map("period_start") @db.Timestamptz(3)
+  quantity         Int
+  // How much of it billing has told Stripe about.
+  reportedQuantity Int      @default(0) @map("reported_quantity")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, meter, periodStart])
+  @@map("usage_records")
 }
 
 // Where a tenant's events are delivered, used by the optional webhooks module (src/optional/webhooks).

@@ -61,6 +61,11 @@ export class StripeApi {
     await this.call('DELETE', `/customers/${encodeURIComponent(customerId)}`);
   }
 
+  // `identifier` makes Stripe count a retry once. Stripe sums the values of a meter, so `value` is what is new.
+  async reportMeterEvent({ eventName, customerId, value, identifier }: { eventName: string; customerId: string; value: number; identifier: string }): Promise<void> {
+    await this.call('POST', '/billing/meter_events', { event_name: eventName, 'payload[stripe_customer_id]': customerId, 'payload[value]': String(value), identifier });
+  }
+
   private async call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: Record<string, string>, idempotencyKey?: string): Promise<T> {
     const res = await fetch(`${STRIPE_API}${path}`, {
       method,

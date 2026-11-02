@@ -79,8 +79,9 @@ test.describe('TenantAdmin', () => {
   test('filters the audit log by actor', async ({ page }) => {
     await createApiKey(page, `e2e-audit-${Date.now()}`);
     await page.goto('/audit');
-    const first = page.getByRole('row').nth(1);
-    await expect(first).toContainText('POST /v1/api-keys');
+    // Filtered: tests running in parallel sign in to this tenant too, which is audited.
+    const first = page.getByRole('row').filter({ hasText: 'POST /v1/api-keys' }).first();
+    await expect(first).toBeVisible();
 
     // Every actor ID links to the log filtered by that actor.
     await first.getByRole('link', { name: /^Show only actions by / }).click();

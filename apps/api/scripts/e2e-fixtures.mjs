@@ -44,6 +44,7 @@ async function cleanup(liveTenantIds) {
   await db.$transaction([
     db.outboxEvent.deleteMany({ where }),
     db.idempotencyKey.deleteMany({ where }),
+    db.usageRecord.deleteMany({ where }),
     db.auditLog.deleteMany({ where }),
     db.tenantIntegration.deleteMany({ where }),
     db.tenantFeatureFlag.deleteMany({ where }),

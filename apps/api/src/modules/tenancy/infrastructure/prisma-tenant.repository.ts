@@ -82,9 +82,10 @@ export class PrismaTenantRepository implements TenantRepository {
     const ids = tenant.sandbox ? [tenant.sandbox.id, id] : [id];
     for (const tenantId of ids) await this.deletionHooks.run(tenantId);
     const where = { tenantId: { in: ids } };
-    const [, , , , , , , , , { count }] = await this.prisma.$transaction([
+    const [, , , , , , , , , , { count }] = await this.prisma.$transaction([
       this.prisma.outboxEvent.deleteMany({ where }),
       this.prisma.idempotencyKey.deleteMany({ where }),
+      this.prisma.usageRecord.deleteMany({ where }),
       // Its members' own actions; what a SuperAdmin did to it stays in the SuperAdmin's tenant.
       this.prisma.auditLog.deleteMany({ where }),
       this.prisma.tenantIntegration.deleteMany({ where }),

@@ -9,12 +9,13 @@ export abstract class RetentionSweep implements OnApplicationBootstrap, OnModule
   protected readonly logger = new Logger(this.constructor.name);
   private timer?: NodeJS.Timeout;
   private running: Promise<void> = Promise.resolve();
+  protected readonly everyMs: number = EVERY_MS;
 
   protected abstract sweep(): Promise<unknown>;
 
   onApplicationBootstrap(): void {
     this.run();
-    this.timer = setInterval(() => this.run(), EVERY_MS);
+    this.timer = setInterval(() => this.run(), this.everyMs);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -25,7 +26,7 @@ export abstract class RetentionSweep implements OnApplicationBootstrap, OnModule
   private run(): void {
     this.running = this.sweep().then(
       () => undefined,
-      (err: unknown) => this.logger.error(`Sweep failed, next one in an hour: ${err instanceof Error ? err.message : String(err)}`),
+      (err: unknown) => this.logger.error(`Sweep failed, will run again: ${err instanceof Error ? err.message : String(err)}`),
     );
   }
 }

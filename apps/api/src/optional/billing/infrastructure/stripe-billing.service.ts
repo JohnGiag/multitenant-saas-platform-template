@@ -1,5 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { BillingStatus, PaidTier } from '@repo/shared-types';
 import type { Queue } from 'bullmq';
@@ -9,6 +9,7 @@ import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js'
 import { recordEvent } from '../../../modules/events/infrastructure/outbox.js';
 import { QUEUE_TIMEOUT_MS } from '../../../modules/jobs/job-config.js';
 import { TenantDeletionHooks } from '../../../modules/tenancy/domain/tenant-deletion-hooks.js';
+import { UsageMeter } from '../../../modules/usage/domain/usage-meter.js';
 import {
   BillingConflictError,
   BillingNotConfiguredError,
@@ -21,10 +22,18 @@ import { parseCheckoutSession, StripeApi, StripeApiError } from './stripe-api.js
 
 export const BILLING_QUEUE = 'billing';
 
-// The only job: drop a cancelled tenant to free when its paid period ends. It carries the tenant, nothing else.
+// Drops a cancelled tenant to free when its paid period ends. It carries the tenant, nothing else.
 export interface PeriodEndJob {
   tenantId: string;
 }
+
+// Tells Stripe what is new in a usage record.
+export interface UsageReportJob {
+  tenantId: string;
+  recordId: string;
+}
+export const USAGE_REPORT_JOB = 'usage-report';
+export type BillingJob = PeriodEndJob | UsageReportJob;
 
 // One job per tenant and cancellation time, so a webhook delivered twice schedules it once.
 export const periodEndJobId = (tenantId: string, cancelAt: Date) => `period-end-${tenantId}-${cancelAt.getTime()}`;
@@ -35,7 +44,7 @@ function unlessGone(error: unknown): void {
 }
 
 @Injectable()
-export class StripeBillingService implements BillingService {
+export class StripeBillingService implements BillingService, OnModuleInit {
   private readonly logger = new Logger('Billing');
   private readonly billing: BillingConfig | null;
   private readonly stripe: StripeApi | null;
@@ -43,8 +52,9 @@ export class StripeBillingService implements BillingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @InjectQueue(BILLING_QUEUE) private readonly queue: Queue<PeriodEndJob>,
+    @InjectQueue(BILLING_QUEUE) private readonly queue: Queue<BillingJob>,
     deletionHooks: TenantDeletionHooks,
+    private readonly usage: UsageMeter,
   ) {
     // Validated here, at boot: a half-configured billing stops startup.
     this.billing = billingConfig((name) => config.get<string>(name) || undefined);
@@ -115,6 +125,29 @@ export class StripeBillingService implements BillingService {
     const account = await this.prisma.billingAccount.findUnique({ where: { tenantId }, select: { stripeCustomerId: true } });
     if (!account) throw new BillingConflictError('This tenant has never subscribed: start with a plan');
     return stripe.createPortalSession(account.stripeCustomerId, this.dashboardUrl('billing'));
+  }
+
+  onModuleInit(): void {
+    if (!this.stripe) return;
+    this.usage.onFlushed(async ({ id, tenantId, quantity }) => {
+      // One job per record and total: a flush repeated on another instance queues it once.
+      await withTimeout(this.queue.add(USAGE_REPORT_JOB, { tenantId, recordId: id }, { jobId: `usage-${id}-${quantity}` }), QUEUE_TIMEOUT_MS, 'Queueing a job');
+    });
+  }
+
+  // Runs from its job, with retries. The identifier holds the total, so a retry after Stripe answered and before this
+  // row was updated is counted once. No customer means nothing to charge: a sandbox, or a tenant that never subscribed.
+  async reportUsage(tenantId: string, recordId: string): Promise<void> {
+    const { stripe } = this.configured();
+    const [record, account] = await Promise.all([
+      this.prisma.usageRecord.findFirst({ where: { id: recordId, tenantId } }),
+      this.prisma.billingAccount.findUnique({ where: { tenantId }, select: { stripeCustomerId: true } }),
+    ]);
+    if (!record || !account) return;
+    const value = record.quantity - record.reportedQuantity;
+    if (value <= 0) return;
+    await stripe.reportMeterEvent({ eventName: record.meter, customerId: account.stripeCustomerId, value, identifier: `${record.id}-${record.quantity}` });
+    await this.prisma.usageRecord.updateMany({ where: { id: recordId, tenantId, reportedQuantity: record.reportedQuantity }, data: { reportedQuantity: record.quantity } });
   }
 
   async applySubscription(subscription: Subscription, createdAt: Date): Promise<void> {

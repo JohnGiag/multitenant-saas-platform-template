@@ -110,6 +110,7 @@ export async function cleanup(apps, tenantIds) {
   const tenantId = { in: [...tenantIds, ...sandboxes.map((s) => s.id)] };
   await db.outboxEvent.deleteMany({ where: { tenantId } });
   await db.idempotencyKey.deleteMany({ where: { tenantId } });
+  await db.usageRecord.deleteMany({ where: { tenantId } });
   await db.auditLog.deleteMany({ where: { tenantId } });
   await db.tenantIntegration.deleteMany({ where: { tenantId } });
   await db.tenantFeatureFlag.deleteMany({ where: { tenantId } });

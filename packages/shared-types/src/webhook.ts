@@ -16,6 +16,7 @@ export const CORE_EVENT_TYPES = [
   'api_key.created',
   'api_key.revoked',
   'tenant.tier_changed',
+  'usage.threshold_reached',
 ] as const;
 
 // What a webhook endpoint receives (the body, signed with Standard Webhooks headers: webhook-id is `id`).

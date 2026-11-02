@@ -1,4 +1,4 @@
-import type { Capability, FeatureFlagDefinition } from '@repo/shared-types';
+import type { Capability, FeatureFlagDefinition, MeterDefinition } from '@repo/shared-types';
 
 export const OPTIONAL_MODULES = Symbol('OptionalModules');
 
@@ -23,6 +23,8 @@ export interface OptionalModule {
   // Its feature flags, gone with the module. A flag with the module's own key gates the whole module: while it is off
   // for a tenant, the capability reports disabled.
   featureFlags?: FeatureFlagDefinition[];
+  // What it counts per tenant for quotas and billing. Spent with UsageMeter.record, enforced with @EnforceQuota.
+  meters?: MeterDefinition[];
   // The module's root NestJS module class.
   module: new (...args: any[]) => unknown;
 }
