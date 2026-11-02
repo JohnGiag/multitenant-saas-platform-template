@@ -22,10 +22,18 @@ export class RedisAccessRevocations implements AccessRevocations {
     }
   }
 
-  async isRevoked({ tenantId, userId, sessionId, issuedAtMs }: Parameters<AccessRevocations['isRevoked']>[0]): Promise<boolean> {
+  isRevoked({ tenantId, userId, sessionId, issuedAtMs }: Parameters<AccessRevocations['isRevoked']>[0]): Promise<boolean> {
+    return this.revokedSince(issuedAtMs, key('tenant', tenantId), key('user', userId), key('session', sessionId));
+  }
+
+  isKeyRevoked({ tenantId, apiKeyId, loadedAtMs }: Parameters<AccessRevocations['isKeyRevoked']>[0]): Promise<boolean> {
+    return this.revokedSince(loadedAtMs, key('tenant', tenantId), key('apiKey', apiKeyId));
+  }
+
+  private async revokedSince(sinceMs: number, ...keys: string[]): Promise<boolean> {
     try {
-      const revokedAt = await this.redis.mget(key('tenant', tenantId), key('user', userId), key('session', sessionId));
-      return revokedAt.some((at) => at !== null && issuedAtMs <= Number(at));
+      const revokedAt = await this.redis.mget(...keys);
+      return revokedAt.some((at) => at !== null && sinceMs <= Number(at));
     } catch (err) {
       // Same choice as rate limiting: signed-in callers keep working through a Redis outage.
       this.logger.error(`Revocation check failed, failing open: ${err instanceof Error ? err.message : String(err)}`);
