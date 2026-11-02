@@ -40,6 +40,7 @@ async function seed(runId) {
 async function cleanup(tenantIds) {
   const where = { tenantId: { in: tenantIds } };
   await db.$transaction([
+    db.outboxEvent.deleteMany({ where }),
     db.auditLog.deleteMany({ where }),
     db.tenantIntegration.deleteMany({ where }),
     db.tenantFeatureFlag.deleteMany({ where }),

@@ -1,4 +1,5 @@
 // Shared e2e setup. Needs the docker-compose database and Redis, and apps/api/.env (see README).
+// Files run one at a time (package.json): they share a database, and one app's outbox relay would take another's events.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -99,12 +100,13 @@ export async function waitFor(check, timeoutMs = 10_000) {
 
 export async function cleanup(apps, tenantIds) {
   for (const app of [apps].flat()) await app?.close();
-  for (const name of ['notifications', 'notifications-dlq']) {
+  for (const name of ['notifications', 'notifications-dlq', 'tenant-events', 'tenant-events-dlq']) {
     const queue = testQueue(name);
     await queue.obliterate({ force: true }).catch(() => {});
     await queue.close();
   }
   const tenantId = { in: tenantIds };
+  await db.outboxEvent.deleteMany({ where: { tenantId } });
   await db.auditLog.deleteMany({ where: { tenantId } });
   await db.tenantIntegration.deleteMany({ where: { tenantId } });
   await db.tenantFeatureFlag.deleteMany({ where: { tenantId } });

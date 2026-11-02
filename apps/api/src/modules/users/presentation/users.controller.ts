@@ -39,7 +39,6 @@ import { RATE_LIMITER, type RateLimiter } from '../../rate-limit/domain/ports/ra
 import { passwordChangeKey } from '../../rate-limit/domain/rate-limit-policy.js';
 import { clearAccountAttempts, countOwnAttempt } from '../../rate-limit/presentation/account-attempts.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
-import { TenantEvents } from '../../events/domain/tenant-events.js';
 import { USER_REPOSITORY, type UserRepository } from '../domain/ports/user.repository.js';
 import { LocalAuthOnly } from '../../auth/presentation/local-auth-only.js';
 
@@ -51,7 +50,6 @@ export class UsersController {
   constructor(
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
     @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
-    private readonly events: TenantEvents,
     @Inject(ACCESS_REVOCATIONS) private readonly revocations: AccessRevocations,
   ) {}
 
@@ -89,7 +87,6 @@ export class UsersController {
     const user = orFail(await this.users.updateRole(tenantId, id, role));
     // Their session stays: the next refresh brings the new role, and the old one stops working now.
     await this.revocations.revoke('user', user.id);
-    await this.events.publish(tenantId, 'member.role_changed', { userId: user.id, role: user.role });
     return user;
   }
 
@@ -100,7 +97,6 @@ export class UsersController {
   async remove(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
     orFail(await this.users.remove(tenantId, id));
     await this.revocations.revoke('user', id);
-    await this.events.publish(tenantId, 'member.removed', { userId: id });
   }
 
   // The caller's own account, so the principal (not @TenantId) decides whose password this is.

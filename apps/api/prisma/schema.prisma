@@ -48,6 +48,7 @@ model Tenant {
   billingAccount BillingAccount?
   webhookEndpoints WebhookEndpoint[]
   featureFlags   TenantFeatureFlag[]
+  outboxEvents   OutboxEvent[]
 
   @@map("tenants")
 }
@@ -301,6 +302,27 @@ model BillingAccount {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("billing_accounts")
+}
+
+// Tenant events waiting for OutboxRelay, written in the transaction of the change they report. A row is deleted once
+// its event is delivered, so the table holds only what is pending.
+model OutboxEvent {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  type          String
+  // Ids and roles only: it leaves the platform (see TenantEvent).
+  data          Json
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  // A claim moves this forward, so a failed or crashed delivery comes up again by itself.
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  // The W3C trace headers of the request, so its trace continues into the delivery. Empty without telemetry.
+  traceContext  Json     @default("{}") @map("trace_context")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  // Not led by tenant_id: the relay looks for due events before it knows any tenant.
+  @@index([nextAttemptAt, id])
+  @@map("outbox_events")
 }
 
 // Where a tenant's events are delivered, used by the optional webhooks module (src/optional/webhooks).

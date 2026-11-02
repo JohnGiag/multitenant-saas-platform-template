@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { hasCode } from '../../../common/prisma-errors.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
-import { TenantEvents } from '../../events/domain/tenant-events.js';
+import { recordEvent } from '../../events/infrastructure/outbox.js';
 import { TENANT_REPOSITORY, type TenantRepository } from '../../tenancy/domain/ports/tenant.repository.js';
 
 const OrganizationSchema = z.object({ id: z.string().min(1), name: z.string() });
@@ -37,7 +37,6 @@ export class ClerkWebhookHandler {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(TENANT_REPOSITORY) private readonly tenants: TenantRepository,
-    private readonly events: TenantEvents,
   ) {}
 
   // `at`: when Clerk created the event (the same on every retry). Throws a ZodError for a payload
@@ -107,11 +106,13 @@ export class ClerkWebhookHandler {
         // Only the starting role comes from Clerk; after that roles are managed here.
         const startingRole = role === 'org:admin' ? 'TenantAdmin' : 'User';
         // createdAt on Clerk's clock, so organizationMembership.deleted compares like with like.
-        const user = await this.prisma.user.create({
-          data: { tenantId: tenant.id, email: email.data, role: startingRole, clerkUserId, createdAt: at, clerkEventAt: at },
-          select: { id: true },
+        await this.prisma.$transaction(async (tx) => {
+          const user = await tx.user.create({
+            data: { tenantId: tenant.id, email: email.data, role: startingRole, clerkUserId, createdAt: at, clerkEventAt: at },
+            select: { id: true },
+          });
+          await recordEvent(tx, tenant.id, 'member.joined', { userId: user.id, role: startingRole });
         });
-        await this.events.publish(tenant.id, 'member.joined', { userId: user.id, role: startingRole });
       }
     } catch (error) {
       // A concurrent delivery of the same event created it first.
@@ -124,8 +125,10 @@ export class ClerkWebhookHandler {
   private async removeMembers(where: Prisma.UserWhereInput): Promise<void> {
     const members = await this.prisma.user.findMany({ where, select: { id: true, tenantId: true } });
     if (members.length === 0) return;
-    await this.prisma.user.deleteMany({ where: { id: { in: members.map((m) => m.id) } } });
-    for (const { id, tenantId } of members) await this.events.publish(tenantId, 'member.removed', { userId: id });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.deleteMany({ where: { id: { in: members.map((m) => m.id) } } });
+      for (const { id, tenantId } of members) await recordEvent(tx, tenantId, 'member.removed', { userId: id });
+    });
   }
 
   // Organization deleted in Clerk: the tenant and everything in it go too.

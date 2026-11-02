@@ -216,8 +216,9 @@ test('a subscription sets the tier; a late, older event changes nothing; a faile
   const created = now();
   assert.equal((await webhook('customer.subscription.created', subscription(tenants.a, customer), { created })).status, 204);
   assert.equal(await tierOf(tenants.a), 'pro');
-  const changed = published.find((e) => e.type === 'tenant.tier_changed' && e.tenantId === tenants.a);
-  assert.deepEqual(changed?.data, { tier: 'pro', previousTier: 'free' });
+  const changed = () => published.find((e) => e.type === 'tenant.tier_changed' && e.tenantId === tenants.a);
+  await waitFor(changed);
+  assert.deepEqual(changed().data, { tier: 'pro', previousTier: 'free' });
   const s = await status();
   assert.equal(s.status, 'active');
   assert.ok(s.currentPeriodEnd);

@@ -4,7 +4,7 @@ import { after, before, test } from 'node:test';
 import { AuthTokenSchema } from '@repo/shared-types';
 import { signRefreshToken } from '../dist/modules/auth/domain/refresh-token.js';
 import { newOneTimeToken } from '../dist/modules/users/domain/one-time-token.js';
-import { cleanup, db, PASSWORD, seedTenant, seedUser, startApp } from './helpers.mjs';
+import { cleanup, db, PASSWORD, seedTenant, seedUser, startApp, waitFor } from './helpers.mjs';
 
 const NEW_PASSWORD = 'an entirely new passphrase';
 const tenants = {};
@@ -189,7 +189,7 @@ test('a tier change reaches members at their next refresh, moments later; other 
   const tokens = await signIn(await seedUser(tenants.b));
   const elsewhere = await signIn(await seedUser(tenants.a));
   assert.equal((await call('PATCH', `/tenants/${tenants.b}`, { token: superToken, body: { tier: 'enterprise' } })).status, 200);
-  assert.equal((await me(tokens.accessToken)).status, 401);
+  await waitFor(async () => (await me(tokens.accessToken)).status === 401);
   assert.equal((await me(elsewhere.accessToken)).status, 200);
   const renewed = await (await refresh(tokens.refreshToken)).json();
   assert.equal((await (await me(renewed.accessToken)).json()).tier, 'enterprise');

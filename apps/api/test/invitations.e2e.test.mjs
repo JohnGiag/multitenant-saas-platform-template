@@ -87,14 +87,15 @@ test('a TenantAdmin invites; the platform sends it; the invitee chooses their pa
   const user = await db.user.findFirstOrThrow({ where: { tenantId: tenants.a, email: 'new.hire@example.com' } });
   assert.equal(user.role, 'Auditor');
   // Public route, still audited: the new member is the actor.
-  const joined = await db.auditLog.findFirstOrThrow({ where: { tenantId: tenants.a, actorId: user.id } });
+  const joined = await db.auditLog.findFirstOrThrow({ where: { tenantId: tenants.a, actorId: user.id }, orderBy: { id: 'asc' } });
   assert.deepEqual(
     { actorRole: joined.actorRole, method: joined.method, route: joined.route, status: joined.status },
     { actorRole: 'Auditor', method: 'POST', route: '/v1/invitations/accept', status: 201 },
   );
 
-  const event = published.find((e) => e.type === 'member.joined' && e.data.userId === user.id);
-  assert.deepEqual({ tenantId: event?.tenantId, data: event?.data }, { tenantId: tenants.a, data: { userId: user.id, role: 'Auditor' } });
+  const event = () => published.find((e) => e.type === 'member.joined' && e.data.userId === user.id);
+  await waitFor(event);
+  assert.deepEqual({ tenantId: event().tenantId, data: event().data }, { tenantId: tenants.a, data: { userId: user.id, role: 'Auditor' } });
 
   // Single use, and the invitation is gone.
   assert.equal((await accept(token)).status, 400);

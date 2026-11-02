@@ -6,7 +6,7 @@ import type { Queue } from 'bullmq';
 import { hasCode } from '../../../common/prisma-errors.js';
 import { withTimeout } from '../../../common/with-timeout.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
-import { TenantEvents } from '../../../modules/events/domain/tenant-events.js';
+import { recordEvent } from '../../../modules/events/infrastructure/outbox.js';
 import { QUEUE_TIMEOUT_MS } from '../../../modules/jobs/job-config.js';
 import { TenantDeletionHooks } from '../../../modules/tenancy/domain/tenant-deletion-hooks.js';
 import {
@@ -45,7 +45,6 @@ export class StripeBillingService implements BillingService {
     private readonly config: ConfigService,
     @InjectQueue(BILLING_QUEUE) private readonly queue: Queue<PeriodEndJob>,
     deletionHooks: TenantDeletionHooks,
-    private readonly events: TenantEvents,
   ) {
     // Validated here, at boot: a half-configured billing stops startup.
     this.billing = billingConfig((name) => config.get<string>(name) || undefined);
@@ -158,21 +157,19 @@ export class StripeBillingService implements BillingService {
       });
       const before = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { tier: true } });
       const after = await tx.tenant.update({ where: { id: tenantId }, data: { tier: tierOf(subscription, prices) }, select: { tier: true } });
-      return { account, previousTier: before.tier, tier: after.tier };
+      if (after.tier !== before.tier) await recordEvent(tx, tenantId, 'tenant.tier_changed', { tier: after.tier, previousTier: before.tier });
+      return account;
     });
     // After the commit, and safe to repeat: a failure answers Stripe 500, and its retry lands here again.
     if (stray) await stripe.cancelSubscription(subscription.id).catch(unlessGone);
     if (!previous) return;
-    await this.schedulePeriodEnd(tenantId, previous.account.cancelAt, subscription, prices);
-    if (previous.tier !== previous.previousTier) {
-      await this.events.publish(tenantId, 'tenant.tier_changed', { tier: previous.tier, previousTier: previous.previousTier });
-    }
+    await this.schedulePeriodEnd(tenantId, previous.cancelAt, subscription, prices);
   }
 
   // Runs at a scheduled cancellation's time. Stripe's own "deleted" event normally arrives then too, and whichever
   // comes first drops the tier; this one also covers a webhook that is late or lost.
-  async endPeriod(tenantId: string, now = new Date()): Promise<'downgraded' | 'skipped'> {
-    const ended = await this.prisma.$transaction(async (tx) => {
+  endPeriod(tenantId: string, now = new Date()): Promise<'downgraded' | 'skipped'> {
+    return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM billing_accounts WHERE tenant_id = ${tenantId}::uuid FOR UPDATE`;
       const account = await tx.billingAccount.findUnique({ where: { tenantId } });
       // Reactivated since (cancelAt cleared or moved later), already ended, or the tenant is gone.
@@ -180,11 +177,9 @@ export class StripeBillingService implements BillingService {
       await tx.billingAccount.update({ where: { id: account.id }, data: { status: 'canceled' } });
       const before = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { tier: true } });
       await tx.tenant.update({ where: { id: tenantId }, data: { tier: 'free' } });
-      return before.tier;
+      if (before.tier !== 'free') await recordEvent(tx, tenantId, 'tenant.tier_changed', { tier: 'free', previousTier: before.tier });
+      return 'downgraded';
     });
-    if (ended === 'skipped') return ended;
-    if (ended !== 'free') await this.events.publish(tenantId, 'tenant.tier_changed', { tier: 'free', previousTier: ended });
-    return 'downgraded';
   }
 
   private async schedulePeriodEnd(

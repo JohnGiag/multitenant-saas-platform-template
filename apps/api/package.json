@@ -9,9 +9,9 @@
     "start": "node dist/main.js",
     "start:otel": "node --env-file-if-exists=.env --experimental-loader=@opentelemetry/instrumentation/hook.mjs --import ./dist/telemetry.js dist/main.js",
     "typecheck": "prisma generate && tsc --noEmit",
-    "test": "node --test \"test/*.test.mjs\"",
+    "test": "node --test --test-concurrency=1 \"test/*.test.mjs\"",
     "test:live": "node --test \"test/live/*.test.mjs\"",
-    "coverage": "node --test --experimental-test-coverage --enable-source-maps --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"**/generated/**\" --test-coverage-exclude=\"**/node_modules/**\" \"test/*.test.mjs\"",
+    "coverage": "node --test --test-concurrency=1 --experimental-test-coverage --enable-source-maps --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"**/generated/**\" --test-coverage-exclude=\"**/node_modules/**\" \"test/*.test.mjs\"",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed-demo": "node scripts/seed-demo.mjs"

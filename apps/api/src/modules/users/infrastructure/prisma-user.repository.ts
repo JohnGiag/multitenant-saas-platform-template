@@ -4,6 +4,7 @@ import { toCursorPage } from '../../../common/cursor-page.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { hashPassword, verifyPassword } from '../../auth/infrastructure/password.js';
+import { recordEvent } from '../../events/infrastructure/outbox.js';
 import { decideMembershipChange } from '../domain/membership.js';
 import type { UserRepository } from '../domain/ports/user.repository.js';
 
@@ -48,14 +49,17 @@ export class PrismaUserRepository implements UserRepository {
   }
 
   updateRole(tenantId: string, id: string, role: AssignableRole) {
-    return this.changeMembership(tenantId, id, role, async (tx) =>
-      toUser(await tx.user.update({ where: { id }, data: { role }, select: PUBLIC_FIELDS })),
-    );
+    return this.changeMembership(tenantId, id, role, async (tx) => {
+      const user = toUser(await tx.user.update({ where: { id }, data: { role }, select: PUBLIC_FIELDS }));
+      await recordEvent(tx, tenantId, 'member.role_changed', { userId: id, role });
+      return user;
+    });
   }
 
   remove(tenantId: string, id: string) {
     return this.changeMembership(tenantId, id, null, async (tx) => {
       await tx.user.delete({ where: { id } });
+      await recordEvent(tx, tenantId, 'member.removed', { userId: id });
       return 'deleted' as const;
     });
   }

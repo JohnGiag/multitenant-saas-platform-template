@@ -77,22 +77,18 @@ test('a delivery never connects to a private address, written in the URL or reso
   await assert.rejects(send('https://localhost:9/hook'), /not a public address/);
 });
 
-test('events go to every listener; a failing listener is reported, never thrown at the publisher', async () => {
-  const failures = [];
-  const events = new TenantEvents((message) => failures.push(message));
-  await events.publish('t1', 'member.joined', { userId: 'u1' }); // no listener: nothing happens
+test('an event reaches every listener; a failing one does not stop the others and is thrown, so its job retries', async () => {
+  const events = new TenantEvents();
+  const event = { id: 'evt_1', type: 'member.joined', tenantId: 't1', occurredAt: new Date(), data: { userId: 'u1' } };
+  await events.dispatch(event); // no listener: nothing happens
 
   const received = [];
-  events.subscribe(async (event) => received.push(event));
   events.subscribe(async () => {
     throw new Error('queue down');
   });
-  await events.publish('t1', 'member.joined', { userId: 'u1' });
-  assert.equal(received.length, 1);
-  assert.deepEqual({ type: received[0].type, tenantId: received[0].tenantId, data: received[0].data }, { type: 'member.joined', tenantId: 't1', data: { userId: 'u1' } });
-  assert.match(received[0].id, /^evt_/);
-  assert.equal(failures.length, 1);
-  assert.match(failures[0], /member\.joined.*queue down/);
+  events.subscribe(async (e) => received.push(e));
+  await assert.rejects(events.dispatch(event), /queue down/);
+  assert.deepEqual(received, [event]);
 
   assert.ok(events.declaredTypes().includes('api_key.created'));
   events.declare('badge.earned');

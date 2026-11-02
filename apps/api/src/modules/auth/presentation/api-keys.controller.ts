@@ -28,7 +28,6 @@ import { keysetCursorSchema } from '../../../common/keyset.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { TenantId } from '../../tenancy/presentation/tenant-context.js';
 import { API_KEY_SERVICE, type ApiKeyService } from '../domain/ports/api-key.port.js';
-import { TenantEvents } from '../../events/domain/tenant-events.js';
 import { Roles } from './decorators.js';
 
 // Keys are listed by created_at, so the cursor value must be a timestamp.
@@ -39,7 +38,6 @@ const ApiKeyPageQuerySchema = pageQuery(keysetCursorSchema(z.iso.datetime()));
 export class ApiKeysController {
   constructor(
     @Inject(API_KEY_SERVICE) private readonly apiKeys: ApiKeyService,
-    private readonly events: TenantEvents,
   ) {}
 
   @Roles('TenantAdmin', 'Auditor')
@@ -58,9 +56,7 @@ export class ApiKeysController {
     @TenantId() tenantId: string,
     @Body(new ZodValidationPipe(CreateApiKeySchema)) body: CreateApiKeyDto,
   ): Promise<CreatedApiKey> {
-    const created = await this.apiKeys.create(tenantId, body);
-    await this.events.publish(tenantId, 'api_key.created', { apiKeyId: created.id, role: created.role });
-    return created;
+    return this.apiKeys.create(tenantId, body);
   }
 
   @ApiDoc('Revoke an API key; it stops working at once')
@@ -68,6 +64,5 @@ export class ApiKeysController {
   @HttpCode(204)
   async revoke(@TenantId() tenantId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
     if (!(await this.apiKeys.revoke(tenantId, id))) throw new NotFoundException();
-    await this.events.publish(tenantId, 'api_key.revoked', { apiKeyId: id });
   }
 }

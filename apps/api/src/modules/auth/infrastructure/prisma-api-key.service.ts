@@ -3,6 +3,7 @@ import type { ApiKeySummary, CreateApiKeyDto, CreatedApiKey, CursorPage, Princip
 import { keysetArgs, keysetPage, type KeysetCursor } from '../../../common/keyset.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
+import { recordEvent } from '../../events/infrastructure/outbox.js';
 import { apiKeySecretMatches, generateApiKey, hashApiKeySecret, parseApiKey } from '../domain/api-key.js';
 import type { ApiKeyService } from '../domain/ports/api-key.port.js';
 
@@ -12,8 +13,12 @@ export class PrismaApiKeyService implements ApiKeyService {
 
   async create(tenantId: string, { name, role }: CreateApiKeyDto): Promise<CreatedApiKey> {
     const key = generateApiKey();
-    const row = await this.prisma.apiKey.create({
-      data: { tenantId, name, role, prefix: key.prefix, secretHash: hashApiKeySecret(key.secret) },
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.apiKey.create({
+        data: { tenantId, name, role, prefix: key.prefix, secretHash: hashApiKeySecret(key.secret) },
+      });
+      await recordEvent(tx, tenantId, 'api_key.created', { apiKeyId: created.id, role: created.role });
+      return created;
     });
     return {
       id: row.id,
@@ -42,12 +47,15 @@ export class PrismaApiKeyService implements ApiKeyService {
     return keysetPage(items, limit, (k) => k.createdAt) satisfies CursorPage<ApiKeySummary>;
   }
 
-  async revoke(tenantId: string, id: string): Promise<boolean> {
-    const { count } = await this.prisma.apiKey.updateMany({
-      where: { id, tenantId, revokedAt: null },
-      data: { revokedAt: new Date() },
+  revoke(tenantId: string, id: string): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.apiKey.updateMany({
+        where: { id, tenantId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (count === 1) await recordEvent(tx, tenantId, 'api_key.revoked', { apiKeyId: id });
+      return count === 1;
     });
-    return count === 1;
   }
 
   async verify(rawKey: string): Promise<Principal | null> {

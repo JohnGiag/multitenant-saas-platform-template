@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { CORE_EVENT_TYPES } from '@repo/shared-types';
 
 // Something that happened in a tenant, for whoever listens (the optional webhooks module delivers it to the tenant's
@@ -13,15 +12,11 @@ export interface TenantEvent {
 
 export type TenantEventListener = (event: TenantEvent) => Promise<void>;
 
-// In-process fan-out: core and modules publish, listeners subscribe in their onModuleInit. With no listener (webhooks
-// not installed), publishing does nothing.
-// shortcut: published after the change commits, so an event is lost if a listener fails then (e.g. Redis down while
-// queueing); write events to an outbox table in the same transaction if delivery must be guaranteed.
+// In-process fan-out: TenantEventsWorker dispatches, listeners subscribe in their onModuleInit. With no listener
+// (webhooks not installed), an event goes nowhere. Events are written with recordEvent (infrastructure/outbox.ts).
 export class TenantEvents {
   private readonly listeners: TenantEventListener[] = [];
   private readonly types = new Set<string>(CORE_EVENT_TYPES);
-
-  constructor(private readonly reportFailure: (message: string) => void) {}
 
   // Event types a module publishes beyond core's, so endpoints can subscribe to them.
   declare(...types: string[]): void {
@@ -36,14 +31,11 @@ export class TenantEvents {
     this.listeners.push(listener);
   }
 
-  // Never throws: the change it reports has already happened, and failing the caller's response now would only make
-  // its client retry the change. Each listener holds up that response, so it must give up soon (see withTimeout).
-  async publish(tenantId: string, type: string, data: Record<string, unknown> = {}): Promise<void> {
-    const event: TenantEvent = { id: `evt_${randomUUID()}`, type, tenantId, occurredAt: new Date(), data };
-    for (const listener of this.listeners) {
-      await listener(event).catch((err: unknown) =>
-        this.reportFailure(`Event ${event.id} (${type}) lost for tenant ${tenantId}: ${err instanceof Error ? err.message : String(err)}`),
-      );
-    }
+  // Every listener runs even if another fails, then the first failure is thrown and the job retries the event for all
+  // of them. So a listener must be safe to run twice, and give up soon (see withTimeout).
+  async dispatch(event: TenantEvent): Promise<void> {
+    const results = await Promise.allSettled(this.listeners.map((listener) => listener(event)));
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed) throw failed.reason;
   }
 }

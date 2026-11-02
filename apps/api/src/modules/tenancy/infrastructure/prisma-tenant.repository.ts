@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type { AdminUpdateTenantDto, CreateTenantDto, CursorPage, Tenant, TenantPageQuery } from '@repo/shared-types';
 import { toCursorPage } from '../../../common/cursor-page.js';
-import { hasCode } from '../../../common/prisma-errors.js';
 import type { Tenant as TenantRow } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
+import { recordEvent } from '../../events/infrastructure/outbox.js';
 import type { TenantRepository } from '../domain/ports/tenant.repository.js';
 import { TenantDeletionHooks } from '../domain/tenant-deletion-hooks.js';
 
@@ -41,13 +41,16 @@ export class PrismaTenantRepository implements TenantRepository {
     return row && toTenant(row);
   }
 
-  async update(id: string, input: AdminUpdateTenantDto): Promise<Tenant | null> {
-    try {
-      return toTenant(await this.prisma.tenant.update({ where: { id }, data: input }));
-    } catch (error) {
-      if (hasCode(error, 'P2025')) return null;
-      throw error;
-    }
+  update(id: string, input: AdminUpdateTenantDto): Promise<Tenant | null> {
+    return this.prisma.$transaction(async (tx) => {
+      // Locked, so two changes at once each report the tier they really replaced. NO KEY: plain FOR UPDATE would also
+      // block every insert that references the tenant.
+      const [before] = await tx.$queryRaw<{ tier: Tenant['tier'] }[]>`SELECT tier FROM tenants WHERE id = ${id}::uuid FOR NO KEY UPDATE`;
+      if (!before) return null;
+      const row = await tx.tenant.update({ where: { id }, data: input });
+      if (row.tier !== before.tier) await recordEvent(tx, id, 'tenant.tier_changed', { tier: row.tier, previousTier: before.tier });
+      return toTenant(row);
+    });
   }
 
   async delete(id: string) {
@@ -62,7 +65,8 @@ export class PrismaTenantRepository implements TenantRepository {
     // First, while the tenant's secrets still exist: a hook that fails leaves the tenant for a retry.
     await this.deletionHooks.run(id);
     const where = { tenantId: id };
-    const [, , , , , , { count }] = await this.prisma.$transaction([
+    const [, , , , , , , { count }] = await this.prisma.$transaction([
+      this.prisma.outboxEvent.deleteMany({ where }),
       // Its members' own actions; what a SuperAdmin did to it stays in the SuperAdmin's tenant.
       this.prisma.auditLog.deleteMany({ where }),
       this.prisma.tenantIntegration.deleteMany({ where }),
