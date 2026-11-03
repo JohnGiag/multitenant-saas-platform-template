@@ -1,6 +1,6 @@
 <div align="center">
 
-# enterprise-api-starter
+# Multi-tenant SaaS Platform Starter
 
 **A production-grade foundation for multi-tenant SaaS:**
 **a NestJS API, a Next.js admin dashboard and shared Zod contracts, in one Turborepo.**
