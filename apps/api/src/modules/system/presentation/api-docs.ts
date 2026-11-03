@@ -245,7 +245,7 @@ export function setupApiDocs(app: INestApplication): void {
     .setVersion('1')
     .setDescription(DESCRIPTION)
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Access token from POST /v1/auth/login, or a Clerk session token' })
-    .addApiKey({ type: 'apiKey', in: 'header', name: 'X-API-Key', description: "A tenant's API key (eak_…)" }, 'apiKey');
+    .addApiKey({ type: 'apiKey', in: 'header', name: 'X-API-Key', description: "A tenant's API key (sk_live_… or sk_test_…)" }, 'apiKey');
   for (const [tag, description] of Object.entries(TAGS)) if (tags.has(tag)) builder.addTag(tag, description);
   const config = builder.build();
   const document = SwaggerModule.createDocument(app, config);
