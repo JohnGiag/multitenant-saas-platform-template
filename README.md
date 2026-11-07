@@ -153,6 +153,7 @@ Each app reads its own env file: `apps/api/.env` and `apps/web/.env.local`. Both
 | `AUTH_PROVIDER` | | `local` (default) or `clerk` |
 | `PORT` | | Default `3000` |
 | `API_DOCS` | | `true` or `false`: Swagger UI at `/docs`. On by default, off when `NODE_ENV=production` unless `true` |
+| `APP_NAME` | | Your product's name where outsiders see it: the API reference title and the webhook `User-Agent` (`<name>-webhooks`). Letters, digits, `.`, `-`, `_`. Default `enterprise-api-starter` |
 | `APP_URL` | for emails | The dashboard's address, used in invitation and reset links |
 | `RESEND_PLATFORM_KEY` / `RESEND_PLATFORM_FROM` | for emails | Platform credentials for system emails. Without the key, invitations answer `503` |
 | `TRUST_PROXY_HOPS` | | Number of proxies in front of the API, so rate limits see the real client IP. Default `0` |
@@ -340,7 +341,7 @@ Optional module `webhooks`: a tenant's events, delivered to HTTPS endpoints its 
 
 ## Audit log
 
-- **Every successful write** (`POST`, `PUT`, `PATCH`, `DELETE`) by a signed-in user or API key is recorded: the actor (kind, id, role), the route pattern, the `:id` target, the status and, when a `SuperAdmin` acted on another tenant, which one. Ids only: no request bodies, raw URLs or personal data.
+- **Every successful write** (`POST`, `PUT`, `PATCH`, `DELETE`) by a signed-in user or API key is recorded: the actor (kind, id, role), the route pattern, the `:id` target, the status and, when a `SuperAdmin` acted on another tenant, which one. Ids only: no request bodies, raw URLs or personal data. A route marked `@NotAudited()` is the exception: high-volume machine traffic that is nobody's action, such as a tenant's server sending data.
 - **Public routes that change an account are recorded too,** with the user as the actor: a sign-in, accepting an invitation, confirming a password reset, and a replayed refresh token (status `401`, the ended session as the target). Reads, other rejected requests (failed sign-ins included) and webhooks are not.
 - **Exporting a person's records:** a `TenantAdmin` gets a member's profile and sessions from `GET /v1/users/:id/export`, and their actions from `GET /v1/audit-logs?actorId=<id>`.
 - **Rows live in the actor's own tenant,** so a `SuperAdmin`'s actions survive the deletion of the tenant they acted on. A `SuperAdmin` reads only that platform log.

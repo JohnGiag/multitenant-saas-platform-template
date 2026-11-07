@@ -5,6 +5,7 @@ import type { WebhookDeliveryError } from '@repo/shared-types';
 import { UnrecoverableError, type Job, type Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Prisma } from '../../../generated/prisma/client.js';
+import { appName } from '../../../config/app-name.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { REDIS_CLIENT } from '../../../infrastructure/redis/redis.module.js';
 import { openSecret, parseMasterKey } from '../../../modules/integrations/domain/secret-box.js';
@@ -29,6 +30,7 @@ interface Attempt {
 abstract class WebhooksWorker extends DeadLetteringWorker<WebhookDeliveryJob> {
   private readonly masterKey: Uint8Array;
   private readonly allowPrivate: boolean;
+  private readonly userAgent: string;
 
   constructor(
     queue: Queue<WebhookDeliveryJob>,
@@ -41,6 +43,7 @@ abstract class WebhooksWorker extends DeadLetteringWorker<WebhookDeliveryJob> {
     super(queue, dlq, config, redis, deletionHooks);
     this.masterKey = parseMasterKey(config.getOrThrow<string>('BYOK_MASTER_KEY'));
     this.allowPrivate = allowPrivateTargets(config);
+    this.userAgent = `${appName(config)}-webhooks`;
   }
 
   async process(job: Job<WebhookDeliveryJob>): Promise<Result> {
@@ -55,7 +58,7 @@ abstract class WebhooksWorker extends DeadLetteringWorker<WebhookDeliveryJob> {
     const timestamp = Math.floor(Date.now() / 1000);
     const headers = {
       'content-type': 'application/json',
-      'user-agent': 'enterprise-api-starter-webhooks',
+      'user-agent': this.userAgent,
       'webhook-id': payload.id,
       'webhook-timestamp': String(timestamp),
       'webhook-signature': signWebhook({ secret, id: payload.id, timestamp, body }),

@@ -39,6 +39,12 @@ test('env validation rejects an unknown AUTH_PROVIDER before anything starts', (
   assert.throws(() => validateEnv({ AUTH_PROVIDER: 'clerck' }), /Unknown AUTH_PROVIDER "clerck"/);
 });
 
+test('APP_NAME, when set, is a single header-safe token', () => {
+  assert.doesNotThrow(() => validateEnv({ APP_NAME: '' }));
+  assert.doesNotThrow(() => validateEnv({ APP_NAME: 'acme-games_2.0' }));
+  for (const bad of ['two words', 'x'.repeat(65), 'evil\r\nX-Injected: 1']) assert.throws(() => validateEnv({ APP_NAME: bad }), /APP_NAME/);
+});
+
 test('a dashboard proxy secret, when set, must be long enough', () => {
   assert.doesNotThrow(() => validateEnv({ DASHBOARD_PROXY_SECRET: '' }));
   assert.doesNotThrow(() => validateEnv({ DASHBOARD_PROXY_SECRET: 'x'.repeat(32) }));

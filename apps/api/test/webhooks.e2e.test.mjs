@@ -116,6 +116,7 @@ test("an event reaches the tenant's endpoints, signed so the receiver can verify
 
   const delivery = await lastTo('/all');
   assert.equal(delivery.headers['content-type'], 'application/json');
+  assert.equal(delivery.headers['user-agent'], 'enterprise-api-starter-webhooks', 'APP_NAME, by default the template name');
   assert.equal(verify(delivery, secret), true);
   const payload = WebhookPayloadSchema.parse(JSON.parse(delivery.body));
   assert.equal(payload.id, delivery.headers['webhook-id']);

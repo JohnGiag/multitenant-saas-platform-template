@@ -82,6 +82,19 @@ test('responses, credentials and headers follow the routes', () => {
   assert.deepEqual(Object.keys(spec.components.securitySchemes).sort(), ['apiKey', 'bearer']);
 });
 
+test('the document is titled with APP_NAME, the template name by default', async () => {
+  assert.equal(spec.info.title, 'enterprise-api-starter');
+  process.env.APP_NAME = 'acme-games';
+  const { app: named, base } = await startApp();
+  try {
+    const titled = await (await fetch(`${base.replace(/\/v1$/, '')}/docs/openapi.json`)).json();
+    assert.equal(titled.info.title, 'acme-games');
+  } finally {
+    await named.close();
+    delete process.env.APP_NAME;
+  }
+});
+
 test('Swagger UI is served at /docs', async () => {
   const res = await fetch(`${origin}/docs`);
   assert.equal(res.status, 200);
