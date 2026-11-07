@@ -17,6 +17,10 @@ export function validateEnv(env: Record<string, unknown>): Record<string, unknow
   if (env.API_DOCS !== undefined && env.API_DOCS !== '' && env.API_DOCS !== 'true' && env.API_DOCS !== 'false') {
     throw new Error(`API_DOCS must be "true" or "false", got "${String(env.API_DOCS)}"`);
   }
+  // Sent in headers (the webhook User-Agent), so a token: no spaces, nothing a header could not carry.
+  if (env.APP_NAME !== undefined && env.APP_NAME !== '' && !/^[A-Za-z0-9._-]{1,64}$/.test(String(env.APP_NAME))) {
+    throw new Error('APP_NAME must be 1 to 64 letters, digits, dots, dashes or underscores');
+  }
   // Anyone holding it can pick their own rate-limit bucket on public routes, so it must not be guessable.
   const proxySecret = env.DASHBOARD_PROXY_SECRET;
   if (typeof proxySecret === 'string' && proxySecret !== '' && proxySecret.length < 32) {

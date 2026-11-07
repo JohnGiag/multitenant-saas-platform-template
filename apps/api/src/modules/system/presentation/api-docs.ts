@@ -8,6 +8,7 @@ import {
   SSE_METADATA,
 } from '@nestjs/common/constants.js';
 import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum.js';
+import { ConfigService } from '@nestjs/config';
 import { ModulesContainer } from '@nestjs/core';
 import {
   ApiBearerAuth,
@@ -28,6 +29,7 @@ import {
 import type { Role } from '@repo/shared-types';
 import { z } from 'zod';
 import { API_DOC_KEY, type ApiDocMetadata } from '../../../common/api-doc.js';
+import { appName } from '../../../config/app-name.js';
 import { ZodValidationPipe } from '../../../common/zod-validation.pipe.js';
 import { scopeFor } from '../../auth/domain/access-policy.js';
 import { IS_PUBLIC_KEY, ROLES_KEY, SCOPE_KEY, SELF_SERVICE_KEY } from '../../auth/presentation/decorators.js';
@@ -233,6 +235,7 @@ function describeRoute(controller: Controller, key: string, descriptor: Property
 }
 
 export function setupApiDocs(app: INestApplication): void {
+  const name = appName(app.get(ConfigService));
   const tags = new Set<string>();
   for (const module of app.get(ModulesContainer).values()) {
     for (const { metatype } of module.controllers.values()) {
@@ -241,7 +244,7 @@ export function setupApiDocs(app: INestApplication): void {
     }
   }
   const builder = new DocumentBuilder()
-    .setTitle('enterprise-api-starter')
+    .setTitle(name)
     .setVersion('1')
     .setDescription(DESCRIPTION)
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Access token from POST /v1/auth/login, or a Clerk session token' })
@@ -251,7 +254,7 @@ export function setupApiDocs(app: INestApplication): void {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document, {
     jsonDocumentUrl: 'docs/openapi.json',
-    customSiteTitle: 'API reference · enterprise-api-starter',
+    customSiteTitle: `API reference · ${name}`,
     swaggerOptions: { persistAuthorization: true, displayRequestDuration: true, showExtensions: true },
   });
 }

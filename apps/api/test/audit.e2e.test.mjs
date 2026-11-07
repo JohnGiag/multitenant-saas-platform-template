@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { cleanup, db, seedTenant, startApp } from './helpers.mjs';
+import { cleanup, db, FIXTURES, seedTenant, startApp } from './helpers.mjs';
 
 const tenants = {};
 const tokens = {};
-let app, call, login;
+let app, call, login, syncApp, syncCall;
 
 before(async () => {
   tenants.platform = await seedTenant('audit-e2e-platform', { super: 'SuperAdmin' });
@@ -13,9 +14,11 @@ before(async () => {
   tokens.super = await login(tenants.platform, 'super@example.com');
   tokens.adminA = await login(tenants.a, 'admin@example.com');
   tokens.userA = await login(tenants.a, 'user@example.com');
+  // A route marked @NotAudited() next to an ordinary one.
+  ({ app: syncApp, call: syncCall } = await startApp({ optionalModulesDir: join(FIXTURES, 'optional-not-audited') }));
 });
 
-after(() => cleanup(app, Object.values(tenants)));
+after(() => cleanup([app, syncApp], Object.values(tenants)));
 
 const auditOf = (tenantId) => db.auditLog.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
 const userId = async (tenantId, local) =>
@@ -141,4 +144,12 @@ test('the audit log filters by actor, target and time, page by page, within the 
   assert.deepEqual(await days({ actorId: stranger }), []);
   assert.equal((await read({ actorId: 'not-a-uuid' })).status, 400);
   assert.equal((await read({ from: '2026-10-01' })).status, 400);
+});
+
+test('a write marked @NotAudited() is not recorded; an ordinary one still is', async () => {
+  const before = (await auditOf(tenants.a)).length;
+  assert.equal((await syncCall('POST', '/sync/data', { token: tokens.adminA })).status, 201);
+  assert.equal((await syncCall('POST', '/sync/change', { token: tokens.adminA })).status, 201);
+  const rows = (await auditOf(tenants.a)).slice(before);
+  assert.deepEqual(rows.map((r) => r.route), ['/v1/sync/change']);
 });
