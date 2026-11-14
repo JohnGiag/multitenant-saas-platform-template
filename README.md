@@ -219,7 +219,7 @@ Access is denied by default: a route answers only the roles it lists, and `Super
 - **Revocation is immediate.** Each request checks short-lived Redis keys, so these stop existing access tokens at once: signing out or a replay (that session), a password change or reset (every session of the account), a role change or removal (the user, who keeps the session and refreshes into the new role), a tier change or a deleted tenant (everyone in it). While Redis is down the check is skipped, and tokens simply run out within 15 minutes.
 - **API keys** (`X-API-Key: <key>`) are for a tenant's own servers and scripts. Not to be confused with the BYOK keys under Settings.
 - **Scopes** limit a key below its role. Core has `read` and `write`; a module declares more with `ApiScopes.declare('ingest')` and opens a route with `@RequireScope('ingest')`. A route without `@RequireScope` is closed to keys. Scopes never widen a role.
-- **Usage metering:** a module declares meters with a quota per tier, spends them with `UsageMeter.record`, and adds `@EnforceQuota('events')` to refuse requests past a hard limit (`429`, code `quota_exceeded`). Tenants see their month on the Usage page and are told at 80% and 100%. With billing installed, usage is reported to Stripe as meter events named after each meter, so create a Stripe meter with that event name.
+- **Usage metering:** a module declares meters with a quota per tier, spends them with `UsageMeter.record`, and adds `@EnforceQuota('events')` to refuse requests past a hard limit (`429`, code `quota_exceeded`). A batch route passes its size, `@EnforceQuota('events', (body) => n)`, and is refused whole when it would pass the limit. Tenants see their month on the Usage page and are told at 80% and 100%. With billing installed, usage is reported to Stripe as meter events named after each meter, so create a Stripe meter with that event name.
 - **Safe retries:** routes that create something accept an `Idempotency-Key` header. A retry with the same key gets the first response back, for 24 hours; a response that held a secret shown once answers `409` instead of repeating it.
 - **Test mode:** the dashboard's Test mode button works on the tenant's sandbox, and keys made there start with `sk_test_`. Live and test data never mix. API callers signed in as a member send `X-Sandbox: true`. Invitations and billing are live only.
 
@@ -268,6 +268,7 @@ Every route is limited with a Redis sliding window over the last 60 seconds, wit
 | Caller | Bucket | Limit | If Redis is down |
 |---|---|---|---|
 | Signed-in user or API key | per tenant and caller | per minute: `free` 120, `pro` 600, `enterprise` 3000 | served, unmetered |
+| Signed-in user or API key, on a route with its own budget (`@RateLimitBudget`) | per tenant, caller and budget | the budget's units per minute for the tier; a request spends what it costs (a batch of 500 spends 500), and units come back evenly over the minute | served, unmetered |
 | Unauthenticated (e.g. sign-in) | per client IP and route | 100 per minute | `503` |
 | Health probes (`/v1/health`, `/v1/health/ready`) | per client IP and route | 100 per minute | served, unmetered |
 | Webhooks with a valid provider signature (Stripe) | not limited | none | served |

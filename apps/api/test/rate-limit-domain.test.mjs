@@ -42,6 +42,12 @@ test('authenticated callers: one bucket per tenant and caller, limit by tier, fa
   assert.equal(planRateLimit(principal('free', 'apiKey'), client).key, 'rl:t1:apiKey:p1');
 });
 
+test("a route's own budget: its own bucket per caller, limit by tier; unauthenticated callers stay per IP", () => {
+  const budget = { name: 'batch', limits: { free: 10, pro: 20, enterprise: 30 } };
+  assert.deepEqual(planRateLimit(principal('pro'), client, budget), { key: 'rl:t1:user:p1:batch', limit: 20, windowMs: 60_000, failOpen: true });
+  assert.deepEqual(planRateLimit(null, client, budget), planRateLimit(null, client));
+});
+
 test('public routes: one bucket per IP and route, HEAD shares GET, fail closed', () => {
   const login = { ip: '10.0.0.1', method: 'POST', route: '/v1/auth/login' };
   assert.deepEqual(planRateLimit(null, login), {

@@ -14,9 +14,16 @@ import { ModuleRef, Reflector } from '@nestjs/core';
 import { metrics } from '@opentelemetry/api';
 import type { AuthenticatedRequest } from '../../auth/presentation/decorators.js';
 import { forwardedClientIp } from '../domain/forwarded-client.js';
-import { RATE_LIMITER, type RateLimiter, type RateLimitResult } from '../domain/ports/rate-limiter.port.js';
+import {
+  RATE_LIMITER,
+  WEIGHTED_RATE_LIMITER,
+  type RateLimiter,
+  type RateLimitResult,
+  type WeightedRateLimiter,
+} from '../domain/ports/rate-limiter.port.js';
 import { planRateLimit, rateLimitAddress } from '../domain/rate-limit-policy.js';
 import { FAIL_OPEN_KEY } from './fail-open.js';
+import { RATE_LIMIT_BUDGET_KEY, type RateLimitBudgetOptions } from './rate-limit-budget.js';
 import { TRUSTED_CALLER_KEY, type TrustedCallerCheck } from './trusted-caller.js';
 
 const rejected = metrics.getMeter('rate-limit').createCounter('rate_limit.rejected', { description: 'Requests refused with 429' });
@@ -24,6 +31,7 @@ const rejected = metrics.getMeter('rate-limit').createCounter('rate_limit.reject
 interface RateLimitedRequest extends AuthenticatedRequest {
   ip?: string;
   rawBody?: Buffer;
+  body?: unknown;
   path: string;
   route?: { path?: string };
 }
@@ -39,6 +47,7 @@ export class RateLimitGuard implements CanActivate {
 
   constructor(
     @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
+    @Inject(WEIGHTED_RATE_LIMITER) private readonly weighted: WeightedRateLimiter,
     private readonly reflector: Reflector,
     private readonly moduleRef: ModuleRef,
     config: ConfigService,
@@ -55,16 +64,20 @@ export class RateLimitGuard implements CanActivate {
     // A provider proven by its signature (a webhook) is not limited: its own retries would otherwise be refused.
     const trusted = this.reflector.getAllAndOverride<Type<TrustedCallerCheck> | undefined>(TRUSTED_CALLER_KEY, [ctx.getHandler(), ctx.getClass()]);
     if (trusted && this.moduleRef.get(trusted, { strict: false }).isTrusted(req)) return true;
+    // A route's own budget is for callers we know; anyone else is limited per IP like on any route.
+    const budget = req.principal
+      ? this.reflector.getAllAndOverride<RateLimitBudgetOptions | undefined>(RATE_LIMIT_BUDGET_KEY, [ctx.getHandler(), ctx.getClass()])
+      : undefined;
     // Route pattern (/api-keys/:id), so every id shares one bucket.
-    const plan = planRateLimit(req.principal ?? null, {
-      ip: req.clientIp,
-      method: req.method,
-      route: req.route?.path ?? req.path,
-    });
+    const plan = planRateLimit(req.principal ?? null, { ip: req.clientIp, method: req.method, route: req.route?.path ?? req.path }, budget);
+    // The body is not validated yet: anything that is not a count costs 1.
+    const cost = budget ? Math.max(1, Math.floor(budget.cost(req.body)) || 1) : 1;
 
     let result: RateLimitResult;
     try {
-      result = await this.limiter.consume(plan.key, plan.limit, plan.windowMs);
+      result = budget
+        ? await this.weighted.consume(plan.key, plan.limit, plan.windowMs, cost)
+        : await this.limiter.consume(plan.key, plan.limit, plan.windowMs);
     } catch (err) {
       const failOpen = plan.failOpen || this.reflector.getAllAndOverride<boolean>(FAIL_OPEN_KEY, [ctx.getHandler(), ctx.getClass()]);
       // Message only: a stack trace per request floods the logs during an outage. Never plan.key: it can hold the client's IP.
