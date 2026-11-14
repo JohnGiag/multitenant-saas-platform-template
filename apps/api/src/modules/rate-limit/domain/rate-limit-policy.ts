@@ -45,13 +45,22 @@ export interface RateLimitPlan {
   failOpen: boolean;
 }
 
+// A route's own budget (@RateLimitBudget), in units per minute for each caller, by its tenant's tier.
+export interface RouteBudget {
+  // Names the bucket: routes declaring the same name share it.
+  name: string;
+  limits: Record<TenantTier, number>;
+}
+
 export function planRateLimit(
   principal: Principal | null,
   client: { ip: string; method: string; route: string },
+  budget?: RouteBudget,
 ): RateLimitPlan {
   if (principal) {
     // Known callers keep working during a Redis outage.
     const key = `rl:${principal.tenantId}:${principal.kind}:${principal.id}`;
+    if (budget) return { key: `${key}:${budget.name}`, limit: budget.limits[principal.tier], windowMs: WINDOW_MS, failOpen: true };
     return { key, limit: TIER_LIMITS[principal.tier], windowMs: WINDOW_MS, failOpen: true };
   }
   // Express answers HEAD with the GET handler; a separate HEAD bucket would double every GET limit.

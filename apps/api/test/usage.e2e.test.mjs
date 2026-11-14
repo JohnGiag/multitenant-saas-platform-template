@@ -65,6 +65,52 @@ test('periods, thresholds and limits', () => {
   assert.equal(isRefused(2, { limit: 3, hard: true }), false);
   assert.equal(isRefused(99, { limit: 3, hard: false }), false, 'a soft limit never refuses');
   assert.equal(isRefused(99, null), false);
+  assert.equal(isRefused(1, { limit: 3, hard: true }, 2), false, 'two more still fit');
+  assert.equal(isRefused(2, { limit: 3, hard: true }, 2), true, 'two more would pass the limit');
+});
+
+const batch = (token, items) => call('POST', '/metered/batch', { token, body: { items } });
+
+test('a request that would pass a hard quota is refused whole', async () => {
+  tenants.batch = await seedTenant('usage-e2e-batch', { admin: 'TenantAdmin' });
+  const token = await login(tenants.batch, 'admin@example.com');
+  assert.equal((await batch(token, [1, 2])).status, 201);
+  const refused = await batch(token, [1, 2]);
+  assert.equal(refused.status, 429);
+  assert.equal((await refused.json()).code, 'quota_exceeded');
+  assert.equal((await batch(token, [1])).status, 201, 'what still fits is served');
+  assert.equal((await usageOf(token, 'hard_units')).used, 3);
+});
+
+test("a route with its own budget spends what each request costs, apart from the caller's requests per minute", async () => {
+  const header = (res, name) => Number(res.headers.get(name));
+  // No quota on this tier, so only the budget can refuse.
+  tenants.budget = await seedTenant('usage-e2e-budget', { admin: 'TenantAdmin' });
+  await db.tenant.update({ where: { id: tenants.budget }, data: { tier: 'enterprise' } });
+  const token = await login(tenants.budget, 'admin@example.com');
+  const first = await batch(token, [1, 2, 3, 4]);
+  assert.equal(first.status, 201);
+  assert.deepEqual([header(first, 'x-ratelimit-limit'), header(first, 'x-ratelimit-remaining')], [10, 6]);
+  assert.equal(header(await batch(token, [1, 2, 3, 4]), 'x-ratelimit-remaining'), 2);
+
+  const refused = await batch(token, [1, 2, 3, 4]);
+  assert.equal(refused.status, 429);
+  assert.ok(header(refused, 'retry-after') >= 1 && header(refused, 'retry-after') <= 60);
+  assert.equal((await usageOf(token, 'hard_units')).used, 8, 'a refused request spends nothing');
+
+  // Not a count: costs 1, then fails in the handler like any invalid body.
+  assert.equal(header(await call('POST', '/metered/batch', { token: token, body: {} }), 'x-ratelimit-remaining'), 1);
+  assert.ok(header(await call('GET', '/usage', { token: token }), 'x-ratelimit-limit') > 10, 'other routes keep the tier limit');
+});
+
+test('a core module declares its own meters, once', async () => {
+  const usage = app.get(UsageMeter, { strict: false });
+  const definition = { key: 'core_units', quotas: { free: null, pro: null, enterprise: null } };
+  usage.declare(definition);
+  await usage.record(tenants.b, 'core_units', 2);
+  assert.equal((await usageOf(tokens.adminB, 'core_units')).used, 2);
+  assert.throws(() => usage.declare(definition), /declared twice/);
+  assert.throws(() => usage.declare({ ...definition, key: 'hard_units' }), /declared twice/, 'nor a key an optional module declared');
 });
 
 test('a tenant over a hard quota is refused with a reason, and the usage route shows it', async () => {

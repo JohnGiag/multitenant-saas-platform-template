@@ -8,13 +8,25 @@ export type UsageRecordListener = (record: UsageRecord) => Promise<void>;
 // follows the counts through onFlushed.
 export class UsageMeter {
   private readonly listeners: UsageRecordListener[] = [];
+  private readonly definitions: MeterDefinition[];
 
   constructor(
-    private readonly definitions: readonly MeterDefinition[],
+    // The optional modules' meters, from their descriptors.
+    definitions: readonly MeterDefinition[],
     private readonly counters: UsageCounters,
     private readonly records: UsageRecords,
     private readonly reportFailure: (message: string) => void,
-  ) {}
+  ) {
+    this.definitions = [...definitions];
+  }
+
+  // A core module's own meters, declared in its onModuleInit like API scopes. Optional modules use their descriptor.
+  declare(...definitions: MeterDefinition[]): void {
+    for (const definition of definitions) {
+      if (this.definitions.some((d) => d.key === definition.key)) throw new Error(`Meter "${definition.key}" is declared twice`);
+      this.definitions.push(definition);
+    }
+  }
 
   meters(): string[] {
     return this.definitions.map((d) => d.key);
@@ -56,12 +68,13 @@ export class UsageMeter {
     );
   }
 
-  // For code without a route; routes use @EnforceQuota. Open when Redis is down, like rate limits for signed-in callers.
-  async isRefused(tenantId: string, meter: string, now = new Date()): Promise<boolean> {
+  // Whether spending `quantity` more would pass a hard limit. For code without a route; routes use @EnforceQuota.
+  // Open when Redis is down, like rate limits for signed-in callers.
+  async isRefused(tenantId: string, meter: string, quantity = 1, now = new Date()): Promise<boolean> {
     const definition = this.definition(meter);
     try {
       const tier = await this.records.tierOf(tenantId);
-      return isRefused(await this.used(tenantId, meter, now), tier && quotaOf(definition, tier));
+      return isRefused(await this.used(tenantId, meter, now), tier && quotaOf(definition, tier), quantity);
     } catch (err) {
       this.reportFailure(`Quota of ${meter} not checked for tenant ${tenantId}: ${err instanceof Error ? err.message : String(err)}`);
       return false;

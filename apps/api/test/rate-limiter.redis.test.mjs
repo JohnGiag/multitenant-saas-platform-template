@@ -5,11 +5,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { after, beforeEach, test } from 'node:test';
 import { Redis } from 'ioredis';
 import { RedisRateLimiter } from '../dist/modules/rate-limit/infrastructure/redis-rate-limiter.js';
+import { RedisWeightedRateLimiter } from '../dist/modules/rate-limit/infrastructure/redis-weighted-rate-limiter.js';
 
 if (existsSync('.env')) process.loadEnvFile();
 
 const redis = new Redis(process.env.REDIS_URL);
 const limiter = new RedisRateLimiter(redis);
+const weighted = new RedisWeightedRateLimiter(redis);
 let key;
 
 beforeEach(() => {
@@ -18,6 +20,24 @@ beforeEach(() => {
 
 after(async () => {
   await redis.quit();
+});
+
+test('weighted: a request spends its cost, all or none of it, and units come back evenly over the window', async () => {
+  // 10 units per 2 s: one comes back every 200 ms.
+  assert.deepEqual(await weighted.consume(key, 10, 2000, 6), { allowed: true, remaining: 4, resetSec: 2 });
+  assert.deepEqual(await weighted.consume(key, 10, 2000, 6), { allowed: false, remaining: 4, resetSec: 1 });
+  assert.equal((await weighted.consume(key, 10, 2000, 4)).allowed, true, 'the refused request spent nothing');
+  await sleep(700);
+  assert.equal((await weighted.consume(key, 10, 2000, 3)).allowed, true); // 3 units are back
+  assert.equal((await weighted.consume(key, 10, 2000, 3)).allowed, false);
+});
+
+test('weighted: a cost above the whole budget spends all of it; one small key that expires', async () => {
+  assert.deepEqual(await weighted.consume(key, 5, 10_000, 500), { allowed: true, remaining: 0, resetSec: 10 });
+  assert.equal((await weighted.consume(key, 5, 10_000, 1)).allowed, false);
+  assert.equal(await redis.type(key), 'string');
+  const ttl = await redis.pttl(key);
+  assert.ok(ttl > 0 && ttl <= 10_000, `ttl ${ttl}`);
 });
 
 test('counts down remaining and reports when a slot frees up', async () => {

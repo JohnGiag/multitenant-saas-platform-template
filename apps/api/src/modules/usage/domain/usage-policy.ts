@@ -10,7 +10,9 @@ export const nextPeriodStart = (now: Date) => new Date(Date.UTC(now.getUTCFullYe
 
 export const quotaOf = (definition: MeterDefinition, tier: TenantTier): MeterQuota | null => definition.quotas[tier] ?? null;
 
-export const isRefused = (used: number, quota: MeterQuota | null) => quota !== null && quota.hard && used >= quota.limit;
+// Whether spending `quantity` more would pass a hard limit.
+export const isRefused = (used: number, quota: MeterQuota | null, quantity = 1) =>
+  quota !== null && quota.hard && used + quantity > quota.limit;
 
 // The thresholds this addition went past. Counters are atomic, so of concurrent additions exactly one crosses each.
 export const crossedThresholds = (before: number, after: number, limit: number): number[] =>
