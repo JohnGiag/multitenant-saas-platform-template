@@ -20,6 +20,7 @@ import { NotificationsController } from './presentation/notifications.controller
     NotificationsWorker,
     { provide: NOTIFICATION_SERVICE, useClass: QueueingNotificationService },
   ],
-  exports: [NotificationChannelRegistry, NOTIFICATION_SERVICE],
+  // SseHub: for a module with real-time events of its own, which serves its recipients' streams itself.
+  exports: [NotificationChannelRegistry, NOTIFICATION_SERVICE, SseHub],
 })
 export class NotificationsModule {}

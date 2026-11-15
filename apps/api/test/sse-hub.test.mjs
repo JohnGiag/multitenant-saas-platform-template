@@ -19,3 +19,24 @@ test('a stream is closed after the lifetime of an access token, so it cannot out
     mock.timers.reset();
   }
 });
+
+test('an event reaches the streams of its recipient in its tenant, under the type it was published with', async () => {
+  // Redis Pub/Sub in one process: what is published comes back on the subscribing connection.
+  let onMessage;
+  const subscriber = { on: (_event, listener) => (onMessage = listener), subscribe: async () => {}, disconnect() {} };
+  const hub = new SseHub({ duplicate: () => subscriber, publish: async (channel, raw) => onMessage(channel, raw) });
+  hub.onModuleInit();
+  const received = {};
+  const open = (name, tenantId, recipientId) => hub.stream(tenantId, recipientId).subscribe((event) => (received[name] ??= []).push(event));
+  const streams = [open('player', 't1', 'player:1'), open('secondTab', 't1', 'player:1'), open('otherRecipient', 't1', 'u1'), open('otherTenant', 't2', 'player:1')];
+
+  await hub.publish('t1', 'player:1', 'update', { points: 10 });
+  await hub.publish('t1', 'u1', 'notification', { title: 'Hi' });
+
+  assert.deepEqual(received.player, [{ type: 'update', data: { points: 10 } }]);
+  assert.deepEqual(received.secondTab, received.player);
+  assert.deepEqual(received.otherRecipient, [{ type: 'notification', data: { title: 'Hi' } }]);
+  assert.equal(received.otherTenant, undefined, 'the same recipient id in another tenant hears nothing');
+  for (const stream of streams) stream.unsubscribe();
+  hub.onModuleDestroy();
+});
