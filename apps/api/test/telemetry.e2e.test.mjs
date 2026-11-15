@@ -112,7 +112,11 @@ before(async () => {
   await post('/auth/refresh', { refreshToken: second.refreshToken });
   await post('/auth/refresh', { refreshToken: first.refreshToken });
 
-  await waitFor(() => spans().some((s) => s.name.startsWith('process ')) && received.some((r) => r.path.startsWith('/hook')));
+  // The webhook job of the request the tests look at, not just any job: a span is exported moments after it ends.
+  await waitFor(() => {
+    const request = spans().find((s) => s.name === 'POST /v1/api-keys');
+    return request && spans().some((s) => s.traceId === request.traceId && /^process webhooks-\d$/.test(s.name)) && received.some((r) => r.path.startsWith('/hook'));
+  });
   await waitFor(() => dataPoints('jobs.depth').length > 0 && logRecords().some((l) => /replayed/.test(l.body?.stringValue)));
   await waitFor(() => dataPoints('http.server.request.duration').some((p) => attribute(p, 'http.route') === '/v1/api-keys/:id'));
 });
