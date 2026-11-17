@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, type ReactNode } from 'react';
+import { startTransition, useActionState, useEffect, useRef, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/components/i18n-provider';
 import type { FormState } from '@/lib/form-state';
@@ -21,11 +21,21 @@ interface ActionFormProps {
 export function ActionForm({ action, submitLabel, variant, size, confirm, className, children }: ActionFormProps) {
   const t = useT();
   const [state, formAction, pending] = useActionState(action, undefined);
+  const form = useRef<HTMLFormElement>(null);
+  // React resets a form after its action, whatever the outcome. Submitted from onSubmit, it does not, and this resets it
+  // only after a success: a refused form keeps what was typed (WCAG 2.2 3.3.7, Redundant Entry).
+  useEffect(() => {
+    if (state && !state.error) form.current?.reset();
+  }, [state]);
   return (
     <form
+      ref={form}
       action={formAction}
       onSubmit={(e) => {
-        if (confirm && !window.confirm(confirm)) e.preventDefault();
+        e.preventDefault();
+        if (confirm && !window.confirm(confirm)) return;
+        const data = new FormData(e.currentTarget);
+        startTransition(() => formAction(data));
       }}
       className={cn('grid gap-4', className)}
       aria-busy={pending}
