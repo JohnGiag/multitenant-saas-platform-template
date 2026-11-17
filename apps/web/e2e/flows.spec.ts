@@ -13,6 +13,23 @@ async function createApiKey(page: Page, name: string, open = true): Promise<stri
 test.describe('TenantAdmin', () => {
   test.use({ storageState: sessionFile('admin') });
 
+  test('a refused form keeps what was typed, and a form that succeeded is cleared', async ({ page }) => {
+    await page.goto('/account');
+    await page.getByLabel('Current password').fill('not the right password');
+    await page.getByLabel('New password').fill('a new password nobody will keep');
+    await page.getByRole('button', { name: 'Change password' }).click();
+    await expect(page.getByText('Current password is incorrect')).toBeVisible();
+    await expect(page.getByLabel('Current password')).toHaveValue('not the right password');
+    await expect(page.getByLabel('New password')).toHaveValue('a new password nobody will keep');
+
+    await page.goto('/notifications');
+    await page.getByLabel('Title').fill('E2E form reset');
+    await page.getByLabel('Message').fill('Sent to myself');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(page.getByLabel('Title')).toHaveValue('');
+    await expect(page.getByLabel('Message')).toHaveValue('');
+  });
+
   test("changes a member's role", async ({ page }) => {
     const { member } = fixtures().emails;
     await page.goto('/users');
