@@ -1,9 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import type { Notification } from '@repo/shared-types';
 import type { Redis } from 'ioredis';
 import { interval, Observable } from 'rxjs';
 import { REDIS_CLIENT } from '../../../infrastructure/redis/redis.module.js';
-import type { NotificationEvent } from '../domain/ports/notification.service.js';
 
 const CHANNEL = 'notifications:sse';
 // Below common proxy idle timeouts (often 60 s), so open streams are not cut.
@@ -14,27 +12,34 @@ export const MAX_STREAMS_PER_USER = 5;
 // browser reconnects on its own, and has to sign in again if the session is gone (or the user removed).
 export const MAX_STREAM_MS = 15 * 60_000;
 
-interface SseMessage {
+// What a stream carries: what a module published, and the hub's own `ping` and `closed` (the last event of a stream
+// the server ends, e.g. over the cap: do not reconnect).
+export interface SseEvent {
+  type: string;
+  data: string | object;
+}
+
+interface SseMessage extends SseEvent {
   tenantId: string;
-  userId: string;
-  notification: Notification;
+  recipientId: string;
 }
 
 interface OpenStream {
-  deliver(notification: Notification): void;
+  deliver(event: SseEvent): void;
   end(): void;
-  // Closed to make room for a newer stream of the same user.
+  // Closed to make room for a newer stream of the same recipient.
   replace(): void;
 }
 
-// Real-time fan-out across API instances: send() publishes to one Redis Pub/Sub channel, every
-// instance receives it and pushes it to the matching users connected to that instance.
+// Real-time fan-out across API instances: publish() sends to one Redis Pub/Sub channel, every instance receives it
+// and pushes it to the recipient's streams open on that instance. Notifications use it for users; a module with
+// real-time events of its own publishes them here and serves stream() from its own @Sse route.
 // shortcut: one channel for all tenants, so every instance parses every event; shard by tenant if
 // event volume per instance becomes a bottleneck.
 @Injectable()
 export class SseHub implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('SseHub');
-  // Per user ("tenantId:userId"): their open streams on this instance, oldest first. An event costs one
+  // Per recipient ("tenantId:recipientId"): their open streams on this instance, oldest first. An event costs one
   // lookup, not one check per open stream.
   private readonly streams = new Map<string, OpenStream[]>();
   private subscriber?: Redis;
@@ -53,9 +58,8 @@ export class SseHub implements OnModuleInit, OnModuleDestroy {
         this.logger.warn('Ignored a malformed SSE message');
         return;
       }
-      for (const stream of this.streams.get(`${message.tenantId}:${message.userId}`) ?? []) {
-        stream.deliver(message.notification);
-      }
+      const { tenantId, recipientId, type, data } = message;
+      for (const stream of this.streams.get(`${tenantId}:${recipientId}`) ?? []) stream.deliver({ type, data });
     });
     this.subscriber.subscribe(CHANNEL).catch((err: unknown) =>
       this.logger.error(`SSE subscribe failed: ${err instanceof Error ? err.message : String(err)}`),
@@ -70,18 +74,20 @@ export class SseHub implements OnModuleInit, OnModuleDestroy {
     this.subscriber?.disconnect();
   }
 
-  async publish(tenantId: string, notification: Notification): Promise<void> {
-    const message: SseMessage = { tenantId, userId: notification.userId, notification };
+  // `recipientId`: a user's id, or a module's own kind of recipient under a prefix no user id can equal
+  // ("player:<id>"). `type` names the SSE event; `ping` and `closed` are the hub's own.
+  async publish(tenantId: string, recipientId: string, type: string, data: string | object): Promise<void> {
+    const message: SseMessage = { tenantId, recipientId, type, data };
     await this.redis.publish(CHANNEL, JSON.stringify(message));
   }
 
-  stream(tenantId: string, userId: string): Observable<NotificationEvent> {
-    return new Observable<NotificationEvent>((subscriber) => {
-      const key = `${tenantId}:${userId}`;
+  stream(tenantId: string, recipientId: string): Observable<SseEvent> {
+    return new Observable<SseEvent>((subscriber) => {
+      const key = `${tenantId}:${recipientId}`;
       const open = this.streams.get(key) ?? [];
       this.streams.set(key, open);
       const stream: OpenStream = {
-        deliver: (data) => subscriber.next({ type: 'notification', data }),
+        deliver: (event) => subscriber.next(event),
         end: () => subscriber.complete(),
         // A final "closed" event tells the client not to reconnect; otherwise tabs over the cap
         // would keep closing each other in turn.

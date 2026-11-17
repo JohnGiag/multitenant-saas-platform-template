@@ -212,7 +212,7 @@ function describeRoute(controller: Controller, key: string, descriptor: Property
       ApiProduces('text/event-stream'),
       ApiResponse({
         status: 200,
-        description: 'Server-Sent Events: `notification` (the notification as JSON), `ping` every 25 s, and `closed` when the server ends the stream (do not reconnect).',
+        description: 'Server-Sent Events: the events the summary names (their data as JSON), `ping` every 25 s, and `closed` when the server ends the stream (do not reconnect).',
         content: { 'text/event-stream': { schema: { type: 'string' } } },
       }),
     );

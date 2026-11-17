@@ -51,7 +51,7 @@ export class NotificationsController {
   // The caller's own notifications, so the principal (not @TenantId) decides whose stream this is.
   // Browsers' EventSource cannot send Authorization headers: use a fetch-based SSE client.
   @Roles('SuperAdmin', 'TenantAdmin', 'User', 'Auditor')
-  @ApiDoc("The caller's own notifications, live (users only, not API keys; at most 5 open streams per instance)")
+  @ApiDoc("The caller's own notifications, live, as `notification` events (users only, not API keys; at most 5 open streams per instance)")
   @Sse('stream')
   stream(@CurrentPrincipal() principal: Principal): Observable<MessageEvent> {
     if (principal.kind !== 'user') throw new ForbiddenException('Only users receive notifications');

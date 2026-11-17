@@ -128,6 +128,7 @@ Dependencies point inward: presentation → domain ← infrastructure. Domain co
 - **Checks that reject a request belong in guards, not interceptors or handlers that run after an `await`.** Nest runs interceptors lazily; on an SSE route that is after the stream has started, so a late 403/429 becomes a 200 with an `error` event.
 - **Adding a channel:** an optional module provides a class implementing `NotificationChannel` (`modules/notifications/domain/notification-channel.ts`) that registers itself in `NotificationChannelRegistry` in `onModuleInit`. Throw `PermanentDeliveryError` for failures a retry cannot fix; any other error is retried. Use `deliveryId` as the provider's idempotency key where one exists.
 - SSE goes through Redis Pub/Sub (`SseHub`) so events reach users connected to any instance.
+- **A module with real-time events of its own uses the same hub:** `SseHub.publish(tenantId, recipientId, type, data)` and an `@Sse` route of its own returning `SseHub.stream(tenantId, recipientId)`. A recipient that is not a user gets a prefix no user id can equal (`player:<id>`). An SSE route's path ends in `/stream`, which is what keeps it out of traces, and its `@ApiDoc` summary names its events.
 
 ## Frontend (`apps/web`)
 

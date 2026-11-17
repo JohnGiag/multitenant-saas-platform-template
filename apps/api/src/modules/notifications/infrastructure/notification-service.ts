@@ -2,12 +2,13 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Notification, SendNotificationResult } from '@repo/shared-types';
 import type { Queue } from 'bullmq';
+import type { Observable } from 'rxjs';
 import { withTimeout } from '../../../common/with-timeout.js';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service.js';
 import { INTEGRATION_SERVICE, type IntegrationService } from '../../integrations/domain/ports/integration.service.js';
 import { QUEUE_TIMEOUT_MS } from '../../jobs/job-config.js';
 import { NotificationChannelRegistry, type NotificationJob } from '../domain/notification-channel.js';
-import type { NotificationService } from '../domain/ports/notification.service.js';
+import type { NotificationEvent, NotificationService } from '../domain/ports/notification.service.js';
 import { SseHub } from './sse-hub.js';
 
 export const NOTIFICATIONS_QUEUE = 'notifications';
@@ -43,7 +44,7 @@ export class QueueingNotificationService implements NotificationService {
     await withTimeout(this.queue.addBulk(jobs), QUEUE_TIMEOUT_MS, 'Queueing a notification');
 
     // Real-time: best effort and not retried, since a user who is not connected misses it anyway.
-    const realtime = await this.sse.publish(tenantId, notification).then(
+    const realtime = await this.sse.publish(tenantId, notification.userId, 'notification', notification).then(
       () => true,
       (err: unknown) => {
         this.logger.warn(`SSE publish failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -54,6 +55,7 @@ export class QueueingNotificationService implements NotificationService {
   }
 
   stream(tenantId: string, userId: string) {
-    return this.sse.stream(tenantId, userId);
+    // A user's id is published to by send() alone, so their stream carries notifications and the hub's own events.
+    return this.sse.stream(tenantId, userId) as Observable<NotificationEvent>;
   }
 }

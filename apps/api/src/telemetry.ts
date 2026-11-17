@@ -12,8 +12,9 @@ import { ScrubbingSpanExporter } from './infrastructure/telemetry/span-scrubber.
 // Optional, and never imported by the app: it runs only when preloaded, ahead of everything it instruments (see
 // `start:otel`, and NODE_OPTIONS in production). Where the data goes is standard OTEL_* configuration.
 
-// Probes would drown the traffic, and an SSE stream would be a single span lasting hours.
-const UNTRACED = ['/v1/health', '/v1/notifications/stream'];
+// Probes would drown the traffic, and an SSE stream would be a single span lasting hours: every SSE route's path
+// ends in /stream.
+const untraced = (url = '') => url.startsWith('/v1/health') || /\/stream(\?|$)/.test(url);
 
 // The default also describes the process, on every signal: its command line and its OS user. The instance id keeps
 // replicas' metrics apart.
@@ -31,7 +32,7 @@ const sdk = new NodeSDK({
     },
   ],
   instrumentations: [
-    new HttpInstrumentation({ ignoreIncomingRequestHook: (req) => UNTRACED.some((path) => req.url?.startsWith(path)) }),
+    new HttpInstrumentation({ ignoreIncomingRequestHook: (req) => untraced(req.url) }),
     new ExpressInstrumentation({ ignoreLayersType: [ExpressLayerType.MIDDLEWARE, ExpressLayerType.ROUTER] }),
     new IORedisInstrumentation(),
     new UndiciInstrumentation(),
