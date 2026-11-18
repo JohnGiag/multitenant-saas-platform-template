@@ -8,7 +8,7 @@ import {
 } from '@repo/shared-types';
 import { revalidatePath } from 'next/cache';
 import { api, apiFailure } from '@/lib/api';
-import { invalid, type FormState } from '@/lib/form-state';
+import { idempotencyKeyOf, invalid, type FormState } from '@/lib/form-state';
 import { getT } from '@/lib/i18n';
 
 // `secret` reaches the browser exactly once, in this action's response; it is never stored or rendered again.
@@ -23,7 +23,7 @@ export async function createEndpoint(_: SecretState, form: FormData): Promise<Se
   if (!parsed.success) return invalid(parsed.error);
   let created: CreatedWebhookEndpoint;
   try {
-    created = await api<CreatedWebhookEndpoint>('/webhooks', { method: 'POST', body: parsed.data });
+    created = await api<CreatedWebhookEndpoint>('/webhooks', { method: 'POST', body: parsed.data, idempotencyKey: idempotencyKeyOf(form) });
   } catch (error) {
     return apiFailure(error);
   }

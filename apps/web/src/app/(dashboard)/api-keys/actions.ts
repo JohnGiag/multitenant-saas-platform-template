@@ -3,7 +3,7 @@
 import { CreateApiKeySchema, IdSchema, type CreatedApiKey } from '@repo/shared-types';
 import { revalidatePath } from 'next/cache';
 import { api, apiFailure } from '@/lib/api';
-import { invalid, type FormState } from '@/lib/form-state';
+import { idempotencyKeyOf, invalid, type FormState } from '@/lib/form-state';
 import { getT } from '@/lib/i18n';
 
 // `key` reaches the browser exactly once, in this action's response; it is never stored or rendered again.
@@ -14,7 +14,7 @@ export async function createApiKey(_: CreateApiKeyState, form: FormData): Promis
   if (!parsed.success) return invalid(parsed.error);
   let created: CreatedApiKey;
   try {
-    created = await api<CreatedApiKey>('/api-keys', { method: 'POST', body: parsed.data });
+    created = await api<CreatedApiKey>('/api-keys', { method: 'POST', body: parsed.data, idempotencyKey: idempotencyKeyOf(form) });
   } catch (error) {
     return apiFailure(error);
   }

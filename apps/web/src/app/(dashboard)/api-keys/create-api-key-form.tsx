@@ -3,6 +3,7 @@
 import { CORE_API_SCOPES } from '@repo/shared-types';
 import { useActionState, useState } from 'react';
 import { Field } from '@/components/field';
+import { IdempotencyKey } from '@/components/idempotency-key';
 import { useT } from '@/components/i18n-provider';
 import { RoleSelect } from '@/components/choice-select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -12,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { createApiKey, type CreateApiKeyState } from './actions';
 
-export function CreateApiKeyForm({ scopes }: { scopes: string[] }) {
+export function CreateApiKeyForm({ scopes, idempotencyKey }: { scopes: string[]; idempotencyKey: string }) {
   const t = useT();
   const [state, formAction, pending] = useActionState<CreateApiKeyState, FormData>(createApiKey, undefined);
   // Tied to the key it is about, so a newer key never shows the previous one's "Copied".
@@ -30,6 +31,7 @@ export function CreateApiKeyForm({ scopes }: { scopes: string[] }) {
   return (
     <div className="grid gap-4">
       <form action={formAction} className="grid gap-4" aria-busy={pending}>
+        <IdempotencyKey value={idempotencyKey} />
         <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
           <Field id="key-name" name="name" label={t('common.name')} required maxLength={100} autoComplete="off" />
           <div className="grid gap-2">

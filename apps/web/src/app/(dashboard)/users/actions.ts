@@ -3,7 +3,7 @@
 import { CreateInvitationSchema, IdSchema, UpdateUserSchema } from '@repo/shared-types';
 import { revalidatePath } from 'next/cache';
 import { api, apiFailure } from '@/lib/api';
-import { invalid, type FormState } from '@/lib/form-state';
+import { idempotencyKeyOf, invalid, type FormState } from '@/lib/form-state';
 import { getT } from '@/lib/i18n';
 
 // Ids arrive bound from the page but come back from the browser, so they are checked again here.
@@ -30,7 +30,7 @@ export async function removeMember(userId: string): Promise<FormState> {
 export async function invite(_: FormState, form: FormData): Promise<FormState> {
   const parsed = CreateInvitationSchema.safeParse({ email: form.get('email'), role: form.get('role') || undefined });
   if (!parsed.success) return invalid(parsed.error);
-  return run(() => api('/invitations', { method: 'POST', body: parsed.data }), (await getT())('users.invitationSent', { email: parsed.data.email }));
+  return run(() => api('/invitations', { method: 'POST', body: parsed.data, idempotencyKey: idempotencyKeyOf(form) }), (await getT())('users.invitationSent', { email: parsed.data.email }));
 }
 
 export async function resendInvitation(invitationId: string): Promise<FormState> {

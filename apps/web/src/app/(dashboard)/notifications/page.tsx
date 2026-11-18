@@ -1,5 +1,6 @@
 import type { CursorPage, User } from '@repo/shared-types';
 import { ActionForm } from '@/components/action-form';
+import { IdempotencyKey } from '@/components/idempotency-key';
 import { Field } from '@/components/field';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -31,6 +32,7 @@ export default async function NotificationsPage() {
           </CardHeader>
           <CardContent>
             <ActionForm action={sendNotification} submitLabel={t('notifications.send')}>
+              <IdempotencyKey />
               <div className="grid gap-2">
                 <Label htmlFor="recipient">{t('notifications.recipient')}</Label>
                 <Select name="userId" defaultValue={me.id} required>

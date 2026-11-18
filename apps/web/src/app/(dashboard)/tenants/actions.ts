@@ -4,7 +4,7 @@ import { AdminUpdateTenantSchema, CreateTenantSchema, IdSchema, type Tenant } fr
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { api, apiFailure, getPrincipal } from '@/lib/api';
-import { invalid, type FormState } from '@/lib/form-state';
+import { idempotencyKeyOf, invalid, type FormState } from '@/lib/form-state';
 import { getT } from '@/lib/i18n';
 import { getTenantOverride, setTenantOverride } from '@/lib/session';
 
@@ -23,7 +23,7 @@ export async function createTenant(_: FormState, form: FormData): Promise<FormSt
   const parsed = CreateTenantSchema.safeParse({ name: form.get('name') });
   if (!parsed.success) return invalid(parsed.error);
   return run(
-    () => api<Tenant>('/tenants', { method: 'POST', body: parsed.data, ownTenant: true }),
+    () => api<Tenant>('/tenants', { method: 'POST', body: parsed.data, ownTenant: true, idempotencyKey: idempotencyKeyOf(form) }),
     (await getT())('tenants.created', { name: parsed.data.name }),
   );
 }
