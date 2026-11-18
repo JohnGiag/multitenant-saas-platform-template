@@ -38,6 +38,8 @@ interface RequestOptions {
   body?: unknown;
   // Leave out the SuperAdmin's selected tenant: the layout's calls must work even if it was deleted (404).
   ownTenant?: boolean;
+  // Sent as Idempotency-Key, for an @Idempotent() route (idempotencyKeyOf in lib/form-state.ts).
+  idempotencyKey?: string;
 }
 
 // Public routes (login, invitation, password reset) are rate limited per client IP. Every call carries the
@@ -109,10 +111,10 @@ async function forwardedClient(): Promise<Record<string, string>> {
   return ip ? { [CLIENT_IP_HEADER]: ip, [DASHBOARD_SECRET_HEADER]: PROXY_SECRET } : {};
 }
 
-async function request<T>(path: string, { method = 'GET', body }: RequestOptions, auth: Record<string, string>): Promise<T> {
+async function request<T>(path: string, { method = 'GET', body, idempotencyKey }: RequestOptions, auth: Record<string, string>): Promise<T> {
   const res = await fetch(`${API_URL}/v1${path}`, {
     method,
-    headers: { ...(await forwardedClient()), ...auth, ...(body !== undefined && { 'content-type': 'application/json' }) },
+    headers: { ...(await forwardedClient()), ...auth, ...(body !== undefined && { 'content-type': 'application/json' }), ...(idempotencyKey && { 'idempotency-key': idempotencyKey }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: 'no-store',
     signal: AbortSignal.timeout(TIMEOUT_MS),

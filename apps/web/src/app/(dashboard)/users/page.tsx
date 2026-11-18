@@ -1,6 +1,7 @@
 import type { CursorPage, Invitation, User } from '@repo/shared-types';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
+import { IdempotencyKey } from '@/components/idempotency-key';
 import { Field } from '@/components/field';
 import { Pager } from '@/components/pager';
 import { RoleSelect } from '@/components/choice-select';
@@ -113,6 +114,7 @@ export default async function UsersPage({ searchParams }: PageProps<'/users'>) {
         <CardContent className="grid gap-6">
           {canManage && (
             <ActionForm action={invite} submitLabel={t('users.sendInvitation')} className="sm:grid-cols-[1fr_auto] sm:items-end">
+              <IdempotencyKey />
               <Field id="invite-email" name="email" label={t('common.email')} type="email" required autoComplete="off" />
               <div className="grid gap-2">
                 <Label htmlFor="invite-role">{t('common.role')}</Label>

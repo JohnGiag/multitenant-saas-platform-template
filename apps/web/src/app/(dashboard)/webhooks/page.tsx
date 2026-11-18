@@ -40,7 +40,7 @@ export default async function WebhooksPage({ searchParams }: PageProps<'/webhook
             <CardDescription>{t('webhooks.createText')}</CardDescription>
           </CardHeader>
           <CardContent>
-            <CreateEndpointForm eventTypes={types} />
+            <CreateEndpointForm eventTypes={types} idempotencyKey={crypto.randomUUID()} />
           </CardContent>
         </Card>
       )}

@@ -1,6 +1,7 @@
 import type { CursorPage, Tenant } from '@repo/shared-types';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/action-form';
+import { IdempotencyKey } from '@/components/idempotency-key';
 import { TierSelect } from '@/components/choice-select';
 import { Field } from '@/components/field';
 import { Pager } from '@/components/pager';
@@ -51,6 +52,7 @@ export default async function TenantsPage({ searchParams }: PageProps<'/tenants'
           </CardHeader>
           <CardContent>
             <ActionForm action={createTenant} submitLabel={t('tenants.createButton')} className="sm:grid-cols-[1fr_auto] sm:items-end">
+              <IdempotencyKey />
               <Field id="new-tenant-name" name="name" label={t('common.name')} required maxLength={100} autoComplete="off" />
             </ActionForm>
           </CardContent>

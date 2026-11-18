@@ -61,6 +61,23 @@ test.describe('TenantAdmin', () => {
     await expect(row.getByText('Revoked')).toBeVisible();
   });
 
+  test('a form resubmitted under the Idempotency-Key it was sent with is not applied twice', async ({ page }) => {
+    const name = `e2e-once-${Date.now()}`;
+    await page.goto('/api-keys');
+    const field = page.locator('input[name="idempotencyKey"]');
+    const sent = await field.inputValue();
+    await createApiKey(page, name, false);
+    await expect(field, 'a success brings the next key').not.toHaveValue(sent);
+
+    // The same request under the key it was first sent with, as a resubmission after a lost response would be.
+    await field.evaluate((input, key) => void ((input as HTMLInputElement).value = key), sent);
+    await page.getByLabel('Name').fill(name);
+    await page.getByRole('button', { name: 'Create key' }).click();
+    await expect(page.getByText('Already done, and its response was shown once')).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('row').filter({ hasText: name })).toHaveCount(1);
+  });
+
   test('limits a key to the scopes ticked', async ({ page }) => {
     const name = `e2e-scoped-${Date.now()}`;
     await page.goto('/api-keys');

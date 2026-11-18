@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { Field } from '@/components/field';
+import { IdempotencyKey } from '@/components/idempotency-key';
 import { useT } from '@/components/i18n-provider';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -45,12 +46,13 @@ function SecretAlert({ id, secret }: { id: string; secret: string }) {
   );
 }
 
-export function CreateEndpointForm({ eventTypes }: { eventTypes: string[] }) {
+export function CreateEndpointForm({ eventTypes, idempotencyKey }: { eventTypes: string[]; idempotencyKey: string }) {
   const t = useT();
   const [state, formAction, pending] = useActionState<SecretState, FormData>(createEndpoint, undefined);
   return (
     <div className="grid gap-4">
       <form action={formAction} className="grid gap-4" aria-busy={pending}>
+        <IdempotencyKey value={idempotencyKey} />
         <Field id="webhook-url" name="url" type="url" label={t('webhooks.url')} required maxLength={2048} autoComplete="off" placeholder="https://" />
         <Field id="webhook-description" name="description" label={t('webhooks.description')} maxLength={200} autoComplete="off" />
         <fieldset className="grid gap-2" aria-describedby="webhook-events-hint">

@@ -40,7 +40,7 @@ export default async function ApiKeysPage({ searchParams }: PageProps<'/api-keys
             <CardDescription>{t('apiKeys.createText')}</CardDescription>
           </CardHeader>
           <CardContent>
-            <CreateApiKeyForm scopes={scopes} />
+            <CreateApiKeyForm scopes={scopes} idempotencyKey={crypto.randomUUID()} />
           </CardContent>
         </Card>
       )}
