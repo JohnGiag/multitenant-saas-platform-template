@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { LOCALES, TranslationsSchema } from '@repo/shared-types';
 import { loadOptionalModules } from '../dist/modules/system/infrastructure/optional-module-loader.js';
+import { UsageMeter } from '../dist/modules/usage/domain/usage-meter.js';
 import { cleanup, db, startApp } from './helpers.mjs';
 
 // A key only English has, to see the fallback.
@@ -43,6 +44,15 @@ test('every language has every English key, so none shows English by accident', 
 test("every installed module's feature flags have a name in every language", async () => {
   const keys = (await loadOptionalModules()).flatMap((m) => m.featureFlags ?? []).map((f) => `flag.${f.key}`);
   assert.ok(keys.length > 0);
+  for (const locale of LOCALES) {
+    const text = await messages(locale);
+    for (const key of keys) assert.ok(text[key], `${locale} has no ${key}`);
+  }
+});
+
+// The template declares none itself: this checks the meters a fork's modules declare, core and optional.
+test('every declared meter has a name in every language, for the Usage page', async () => {
+  const keys = app.get(UsageMeter).meters().map((meter) => `meter.${meter}`);
   for (const locale of LOCALES) {
     const text = await messages(locale);
     for (const key of keys) assert.ok(text[key], `${locale} has no ${key}`);
