@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { api, getPrincipal } from '@/lib/api';
 import { getT, pageTitle } from '@/lib/i18n';
-import { usageState, type UsageState } from '@/lib/usage';
+import { meterName, usageState, type UsageState } from '@/lib/usage';
 
 export const generateMetadata = pageTitle('nav.usage');
 
@@ -52,7 +52,7 @@ export default async function UsagePage() {
                   const state = usageState(meter);
                   return (
                     <TableRow key={meter.meter}>
-                      <TableCell className="font-mono text-sm">{meter.meter}</TableCell>
+                      <TableCell>{meterName(t, meter.meter)}</TableCell>
                       <TableCell>{meter.used}</TableCell>
                       <TableCell>{meter.limit ?? t('usage.unlimited')}</TableCell>
                       <TableCell>
