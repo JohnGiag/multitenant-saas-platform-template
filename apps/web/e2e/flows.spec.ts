@@ -30,6 +30,34 @@ test.describe('TenantAdmin', () => {
     await expect(page.getByLabel('Message')).toHaveValue('');
   });
 
+  test('the sidebar groups its pages, and its search takes you to one', async ({ page }) => {
+    await page.goto('/');
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    const search = nav.getByRole('searchbox', { name: 'Search pages' });
+    // A fork adds its pages to these groups: what is here must stay.
+    for (const name of ['API keys', 'Webhooks']) await expect(nav.getByRole('list', { name: 'Developers' }).getByRole('link', { name })).toBeVisible();
+
+    // From anywhere on the page, by keyboard alone: Ctrl+K, a word, Enter.
+    await page.getByRole('main').click();
+    await page.keyboard.press('Control+k');
+    await expect(search).toBeFocused();
+    await page.keyboard.type('AUDIT');
+    await expect(nav.getByRole('link')).toHaveText(['Audit log']);
+    await expect(nav.getByRole('status')).toHaveText('Pages found: 1');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/audit$/);
+    await expect(search).toHaveValue('');
+
+    // A group's name finds its pages; nothing found says so, and Escape brings every page back.
+    await search.fill('developers');
+    await expect(nav.getByRole('list')).toHaveCount(1);
+    await expect(nav.getByRole('list', { name: 'Developers' })).toBeVisible();
+    await search.fill('no such page');
+    await expect(nav.getByText('No page matches.')).toBeVisible();
+    await search.press('Escape');
+    await expect(nav.getByRole('link', { name: 'Overview' })).toBeVisible();
+  });
+
   test("changes a member's role", async ({ page }) => {
     const { member } = fixtures().emails;
     await page.goto('/users');
