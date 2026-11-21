@@ -128,6 +128,7 @@ The API listens on http://localhost:3000 (`PORT`), with its interactive referenc
 | `pnpm --filter @repo/api db:deploy` | Applies the database migrations |
 | `pnpm --filter @repo/api db:migrate` | Creates and applies a migration after a schema change (development) |
 | `pnpm --filter @repo/api db:seed-demo "<password>"` | Creates the demo accounts above. Local only: refuses to run with `NODE_ENV=production`, needs `pnpm build` first, and changes nothing when run again |
+| `BYOK_MASTER_KEY=<current> BYOK_MASTER_KEY_NEW=<new> pnpm --filter @repo/api db:rotate-master-key` | Re-encrypts every stored secret (BYOK integrations, webhook signing secrets) with a new master key, in one transaction. Stop the API first, then start it with the new key; keep the old one while backups from before exist. In production, run it from the `migrate` image: `node scripts/rotate-master-key.mjs` |
 | `pnpm --filter @repo/api test:live` | Opt-in: sends one real email through Resend to its `delivered@resend.dev` test address (see below) |
 
 <details>
