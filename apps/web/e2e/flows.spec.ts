@@ -174,6 +174,36 @@ test.describe('TenantAdmin', () => {
   });
 });
 
+test.describe('On a phone', () => {
+  test.use({ storageState: sessionFile('admin'), viewport: { width: 390, height: 844 } });
+
+  test('the sidebar is a menu button: its links show only when it is open', async ({ page }) => {
+    await page.goto('/');
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    const opener = page.getByRole('button', { name: 'Open menu' });
+    await expect(nav).toBeHidden();
+    await expect(opener).toHaveAttribute('aria-expanded', 'false');
+    // The header's controls wrap rather than run off the screen.
+    await expect(page.getByRole('button', { name: 'Sign out' })).toBeInViewport({ ratio: 1 });
+
+    await opener.click();
+    await expect(page.getByRole('button', { name: 'Close menu' })).toHaveAttribute('aria-expanded', 'true');
+    await nav.getByRole('link', { name: 'Audit log' }).click();
+    await expect(page).toHaveURL(/\/audit$/);
+    await expect(nav).toBeHidden();
+
+    // Escape closes it and gives the button its focus back; Ctrl+K opens it at its search.
+    await opener.click();
+    await expect(nav).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(nav).toBeHidden();
+    await expect(opener).toBeFocused();
+    await page.keyboard.press('Control+k');
+    await expect(nav.getByRole('searchbox', { name: 'Search pages' })).toBeFocused();
+    await expectAccessible(page);
+  });
+});
+
 test.describe('Webhooks', () => {
   test.describe('TenantAdmin', () => {
     test.use({ storageState: sessionFile('admin') });
