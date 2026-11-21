@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
+import { z } from 'zod';
+import { openApiSchema } from '../dist/modules/system/presentation/api-docs.js';
 import { FIXTURES, startApp } from './helpers.mjs';
 
 let app, origin, spec;
@@ -53,6 +55,16 @@ test('request schemas come from the Zod pipes that validate them', () => {
 
   assert.deepEqual(params(op('patch', '/v1/users/{id}'), 'path').id.schema, { type: 'string', format: 'uuid' });
   assert.ok(params(op('get', '/v1/storage/downloads'), 'query').key.required);
+});
+
+test('a recursive schema is described without $refs the document cannot resolve', () => {
+  const schema = openApiSchema(z.object({ data: z.json() }), 'input');
+  assert.doesNotMatch(JSON.stringify(schema), /\$ref|definitions/);
+  // One level deep: a JSON value's own kinds, any value inside an array or object.
+  const kinds = schema.properties.data.anyOf;
+  assert.deepEqual(kinds.map((kind) => kind.type), ['string', 'number', 'boolean', 'string', 'array', 'object']);
+  assert.deepEqual([kinds[4].items, kinds[5].additionalProperties], [{}, {}]);
+  assert.doesNotMatch(JSON.stringify(spec), /#\/definitions\//);
 });
 
 test('routes behind a feature flag say so', () => {

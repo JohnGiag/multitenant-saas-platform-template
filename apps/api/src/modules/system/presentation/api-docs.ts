@@ -82,7 +82,18 @@ const ERROR_SCHEMA: SchemaObject = {
 
 // Zod to an OpenAPI 3.0 schema. A `format` (uuid, email, date-time) already says what the regex Zod adds next to it says.
 export function openApiSchema(schema: z.ZodType, io: 'input' | 'output'): SchemaObject {
-  return dropFormatPatterns(z.toJSONSchema(schema, { io, target: 'openapi-3.0', unrepresentable: 'any' })) as SchemaObject;
+  const { definitions = {}, ...json } = z.toJSONSchema(schema, { io, target: 'openapi-3.0', unrepresentable: 'any' }) as { definitions?: Record<string, unknown> };
+  return dropFormatPatterns(inlineDefinitions(json, definitions, false)) as SchemaObject;
+}
+
+// A recursive schema (z.json()) comes with `$ref`s to `definitions` of its own, which an OpenAPI document has nowhere
+// to hold: it is described one level deep, and as any value below that.
+function inlineDefinitions(node: unknown, definitions: Record<string, unknown>, nested: boolean): unknown {
+  if (Array.isArray(node)) return node.map((item) => inlineDefinitions(item, definitions, nested));
+  if (!node || typeof node !== 'object') return node;
+  const ref = /^#\/definitions\/(.+)$/.exec((node as { $ref?: string }).$ref ?? '')?.[1];
+  if (ref !== undefined) return nested ? {} : inlineDefinitions(definitions[ref], definitions, true);
+  return Object.fromEntries(Object.entries(node).map(([key, value]) => [key, inlineDefinitions(value, definitions, nested)]));
 }
 
 function dropFormatPatterns(node: unknown): unknown {
