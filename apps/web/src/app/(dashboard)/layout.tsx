@@ -33,12 +33,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       >
         {t('common.skipToContent')}
       </a>
-      <aside className="border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:h-dvh md:w-64 md:shrink-0 md:overflow-y-auto md:border-r md:border-b-0">
+      {/* On a phone: a bar with the brand and the menu button (SidebarNav), kept at the top. */}
+      <aside className="sticky top-0 z-20 border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:h-dvh md:w-64 md:shrink-0 md:overflow-y-auto md:border-r md:border-b-0">
         <Brand className="px-6 py-5" />
         <SidebarNav role={me.role} features={meters.length > 0 ? [...features, 'usage'] : features} testMode={testMode} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex min-h-16 flex-wrap items-center justify-between gap-4 border-b bg-background/85 px-4 py-3 backdrop-blur sm:px-6 lg:px-10">
+        <header className="z-10 flex min-h-16 flex-wrap items-center justify-between gap-4 border-b bg-background/85 px-4 py-3 backdrop-blur sm:px-6 md:sticky md:top-0 lg:px-10">
           {/* A SuperAdmin picks tenants with X-Tenant-Id; in Clerk mode everyone else switches the active organization. */}
           {me.role === 'SuperAdmin' ? (
             <SuperAdminTenants ownTenantId={me.tenantId} />
@@ -47,7 +48,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           ) : (
             <CurrentTenant />
           )}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {me.role !== 'SuperAdmin' && (
               <form action={switchTestMode.bind(null, !testMode)}>
                 <Button type="submit" variant={testMode ? 'default' : 'outline'} size="sm" aria-pressed={testMode}>
